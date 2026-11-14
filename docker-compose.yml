@@ -1,0 +1,58 @@
+# 一条命令起全套：MySQL 8 + 看板
+#
+#   docker compose up -d          起服务
+#   docker compose logs -f app    看日志（排障第一步）
+#   docker compose down          停服务（数据还在）
+#   docker compose down -v       停服务并删数据卷（重新初始化表结构时用）
+#
+# 起来之后：http://localhost:8501
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: aqi-mysql
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root123}
+      MYSQL_DATABASE: ${MYSQL_DB:-aqi}
+      TZ: Asia/Shanghai
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      # 首次启动时自动执行建表与建索引（只在数据卷为空时跑一次）
+      - ./sql/01_create.sql:/docker-entrypoint-initdb.d/01_create.sql:ro
+      - ./sql/02_index.sql:/docker-entrypoint-initdb.d/02_index.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p${MYSQL_ROOT_PASSWORD:-root123}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+    restart: unless-stopped
+
+  app:
+    build: .
+    container_name: aqi-app
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      # 注意：容器之间用服务名 mysql，不是 127.0.0.1
+      MYSQL_HOST: mysql
+      MYSQL_PORT: "3306"
+      MYSQL_USER: root
+      MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root123}
+      MYSQL_DB: ${MYSQL_DB:-aqi}
+      AQI_WORKSPACE: /app/data/raw
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./data:/app/data          # 日级 csv.gz 与原始数据的挂载点
+      - ./reports:/app/reports    # 质量报告与查询结果可写回宿主机
+    restart: unless-stopped
+
+volumes:
+  mysql_data:
