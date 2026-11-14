@@ -74,6 +74,21 @@ def fmt(value, digits: int = 2, suffix: str = "") -> str:
     return f"{value}{suffix}"
 
 
+def fmt_p(p) -> str:
+    """p 值专用格式：小于 0.001 时用科学计数法。
+
+    为什么不能直接用 ``fmt(p, 6)``：p = 2.5e-11 会被格式化成 ``0.000000``，
+    读者会误读成「p 恰好等于 0」，而 p 值在数学上不可能为 0。
+    """
+    if p is None:
+        return "—"
+    if isinstance(p, float) and not np.isfinite(p):
+        return "—"
+    if p < 1e-3:
+        return f"{p:.3e}"
+    return f"{p:.4f}"
+
+
 def markdown_table(header: list[str], rows: list[list[str]]) -> list[str]:
     """手写 markdown 表，避免依赖 tabulate。"""
     lines = ["| " + " | ".join(header) + " |",
@@ -271,7 +286,7 @@ def sec_significance(df: pd.DataFrame) -> list[str]:
                     [f"{last} 年均", fmt(res["mean_after"])],
                     ["差值（末 − 首）", fmt(res["diff"])],
                     ["t 统计量", fmt(res["t"], 4)],
-                    ["p 值", fmt(res["p"], 6)],
+                    ["p 值", fmt_p(res["p"])],
                     ["α = 0.05 下显著", "是" if res["significant"] else "否"
                      if res["significant"] is not None else "—"],
                 ],
@@ -284,11 +299,18 @@ def sec_significance(df: pd.DataFrame) -> list[str]:
                 lines.append(
                     f"> 结论：{res['n']} 座城市 {first}→{last} 年均 PM2.5 "
                     f"平均{direction} {abs(res['diff']):.2f} μg/m³，"
-                    f"配对 t 检验 p = {res['p']:.4g} < 0.05，差异显著。")
+                    f"配对 t 检验 p = {fmt_p(res['p'])} < 0.05，差异显著。")
             else:
                 lines.append(
-                    f"> 结论：p = {res['p']:.4g} ≥ 0.05，**差异不显著**——"
+                    f"> 结论：p = {fmt_p(res['p'])} ≥ 0.05，**差异不显著**——"
                     "不能据此说治理见效或恶化。")
+            lines.append("")
+            lines.append(
+                f"> **口径说明**：本节均值是「{res['n']} 座城市的年均值之平均」"
+                f"（城市等权，只含首末年都达到 {MIN_DAYS_FOR_RANK} 个有效日的城市）；"
+                "第 2 节的逐年均值是「全部城市-日观测的平均」（天数多的城市权重更大）。"
+                "两者分母不同，所以数字相近但不相等——这是两套口径，不是矛盾。")
+            lines.append("")
             lines.append("")
         else:
             lines += [f"> ⚠️ {first} 或 {last} 年没有达标城市，无法配对。", ""]
@@ -327,7 +349,9 @@ def sec_significance(df: pd.DataFrame) -> list[str]:
 def sec_conclusions(df: pd.DataFrame) -> list[str]:
     """把前面算出来的事实拼成句子——数字全部来自 df，没有一个字是预设的。"""
     lines = ["## 7. 结论汇总（自动生成）", "",
-             "> 下面每一句都来自本文件上文的表格，没有预设结论。", ""]
+             "> 下面每一句都来自本文件上文的表格，没有预设结论。",
+             "> 差值与百分比由**未四舍五入的原始值**计算，所以拿本表显示的两个数"
+             "直接相减，可能与文字里写的差值差 0.01——这是舍入，不是算错。", ""]
     bullets: list[str] = []
 
     dates = pd.to_datetime(df["date"])
