@@ -219,6 +219,82 @@ README §10 新增第 10 条（三沙只有 3 天、蓬莱只有 1 天，排名�
 
 ---
 
+## R4 · 2026-11-14 从零全量重跑（验证可复现性）
+
+### 为什么跑
+
+用户要求「项目重新跑一遍，确保没问题」。目标不是跑通，而是验证 **同一批输入能不能
+产出完全相同的结果**——能，才敢说这条流水线是确定的。
+
+### 做法
+
+先把旧产出挪走，避免「读到上次结果」的可能：
+
+```bash
+Move-Item data/processed/aqi_daily.csv.gz data/_prev_daily.csv.gz
+Copy-Item reports/report.md reports/_baseline_report.md
+Copy-Item reports/data_quality.md reports/_baseline_data_quality.md
+python scripts/prepare_data.py --no-resume
+python scripts/make_report.py
+```
+
+### 命令与结果
+
+| # | 命令 | 结果 | 耗时 |
+|---|---|---|---|
+| 1 | `python -m pytest -q`（跑前） | 63 passed, 1 xfailed | 2.55 s |
+| 2 | `python -m compileall -q app src scripts tests conftest.py` | 通过 | — |
+| 3 | `python scripts/prepare_data.py --no-resume` | **632,513 行 × 24 列**，1826/1826 个日文件 | **1279.9 s** |
+| 4 | `python scripts/make_report.py` | 报告 632,513 行 / 24 列 / 372 城 | 16.7 s |
+
+### 可复现性结论（这次跑的核心产出）
+
+| 比对项 | 结果 |
+|---|---|
+| 行数 × 列数 | 632,513 × 24，与上次完全一致 |
+| 列名 | 逐个一致 |
+| **整表内容 SHA-256** | **`ade01f91bd88e63ccc7b1d6c…`，新旧两个文件哈希完全相同** |
+| 逐列比对 | 24 列全部相同，无一处差异 |
+| `reports/report.md` | 与基线相比**只差一行「生成时间」**，正文一字未改 |
+| `reports/data_quality.md` | 指标统计表数字全部相同 |
+
+> 结论：这条流水线是**确定性**的。同样的输入跑两遍，产出逐字节一致。
+
+### 耗时异常（记下来，不是代码问题）
+
+这次 **1279.9 s（0.70 s/文件）**，而 R1 的同一条命令只要 **280.9 s（0.15 s/文件）**，
+慢了 4.5 倍。排查结果：
+
+- python 进程拿到约 **85% 的单核 CPU**、17 个线程，内存从 262 MB 涨到 385 MB（末段拼整表），
+  进程没有卡住，就是在算
+- 同期机器上还在跑：`OmenCommandCenterBackground`（4596 s CPU）、DeepSeek Harness（2968 s）、
+  Qoder CN ×2（2810 s / 1506 s）、哔哩哔哩 ×2（2000 s / 1367 s）
+
+**教训**：记录性能数字时必须同时记录机器负载，否则同一个命令的两个耗时会被误读成性能退化。
+
+### 顺带修掉的问题
+
+`reports/data_quality.md` 此前只有 10 行、缺整张「各指标非空情况」表。原因是我在 11-14
+更早的一次操作里用 `save_quality_report(db.load_daily_csv())` 手工重建——但
+`load_daily_csv()` 会把列名 `PM2.5` 改成 `pm25`，而报告函数按原始指标名查找，于是全部
+匹配不上、写成了「（无数据）」。当时只看了文件前 6 行就宣布「已恢复」，属于漏检。
+
+这次全量重跑重建出完整版本（26 行），并确认表内每个数字与 11-08 那次一致。
+
+### 踩的坑
+
+- **看不到进度**：`tqdm` 的进度条写 stderr，而命令用了 `2>&1 | Select-Object -Last 12`，
+  输出被管道整体缓冲，20 分钟里一条进度都没有。长任务要改成
+  `python -u ... 2>&1 | Tee-Object -FilePath run.log`，才能边跑边看。
+- **pandas 3.0 移除了 `Series.tobytes()`**：算哈希时要用 `s.to_numpy().tobytes()`。
+
+### 未验证项（没有变化）
+
+`load_mysql.py`、`run_queries.py`、`app/app.py`（Streamlit）、`Dockerfile`、
+`requirements.txt` 全量安装——仍然一次都没跑。
+
+---
+
 ## 模板（下次运行照这个填）
 
 ```
