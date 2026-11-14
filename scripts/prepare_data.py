@@ -8,7 +8,7 @@
 python scripts/prepare_data.py --limit 3
 
 # 全量（2021–2025 共 5 个包 → 1826 个日文件）
-# 耗时**未实测**，首次全量运行请记下实际用时写进 docs/
+# 本机实测：1826 个日文件约 281 秒（0.15 s/日文件），见 docs/run-log.md
 python scripts/prepare_data.py
 
 # 只跑 2025 年
