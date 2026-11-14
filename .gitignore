@@ -25,6 +25,12 @@ data/processed/
 # 报告里的临时产物
 *.png.tmp
 
+# 运行日志（本地排障用，不进仓库）
+*.log
+
+# SQL 查询的输出（跑 run_queries.py 生成，样例见 docs/run-log.md）
+reports/queries/
+
 # 系统
 .DS_Store
 Thumbs.db

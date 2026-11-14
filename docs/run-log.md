@@ -295,6 +295,102 @@ python scripts/make_report.py
 
 ---
 
+## R4 · 2026-11-14 第一次真正跑通 MySQL / SQL 查询 / 看板
+
+之前 R1–R3 里最要紧的那句「MySQL、查询、看板一次都没跑」在这一轮被推翻了。
+所有数字都是真的跑出来的。
+
+### 环境
+
+| 项 | 实测值 |
+|---|---|
+| Docker | 29.9.2（Desktop，守护进程本轮才启动） |
+| MySQL | 官方镜像 `mysql:8.0`，容器名 `aqi-mysql`，20 秒 healthy |
+| Streamlit | 1.67.0 |
+| pyecharts / streamlit-echarts | 2.1.0 / 0.7.0（本轮 `pip install` 补装） |
+
+仓库没有 `.env`，走 `src/config.py` 的默认 `root/root` —— 这正好验证了 R3 把
+`docker-compose.yml` 默认密码从 `root123` 改成 `root` 是对的，否则这里必然 Access denied。
+
+### 命令与结果
+
+| # | 命令 | 结果 | 耗时 |
+|---|---|---|---|
+| 1 | `docker compose up -d mysql` | healthy；initdb 建出 `aqi_daily` / `aqi_daily_stg` / `station` 三张表 + 3 个索引 | 20 s |
+| 2 | `python -c "from src.db import ping; print(ping())"` | `True` | < 1 s |
+| 3 | `python scripts/load_mysql.py`（第一次） | **632,513 行**，MERGE 影响 632,513 | **562.3 s**（1,125 行/秒） |
+| 4 | `python scripts/load_mysql.py`（第二次） | 同上 | **589.7 s**（1,073 行/秒） |
+| 5 | 两次之后的 `COUNT(*)` | **仍是 632,513 行 / 372 个 station / 暂存表 0 行** | — |
+| 6 | `python scripts/run_queries.py --show` | 5 条查询全部成功，导出 5 个 CSV | **7.9 s** |
+| 7 | `streamlit run app/app.py` | `/_stcore/health` 返回 `200 ok` | 20 s |
+
+**幂等性终于被证实**：第 3 次和第 4 次导入之后 `aqi_daily` 的行数一个都没多，
+暂存表两次都清空回 0 行。`ON DUPLICATE KEY UPDATE` 的 MERGE 路线是有效的。
+
+### 真跑才发现的两个缺陷（静态检查永远发现不了）
+
+**1. `station` 维表和事实表 join 不上（数据建模错误）**
+
+现象：维表写进去 **2,026 行**，`station` 是 `1001A`、`2260A` 这类站点编码；
+事实表的 `station` 却是 **372 个城市名**。执行
+
+```sql
+SELECT COUNT(*) FROM aqi_daily d JOIN station s ON d.station = s.station;
+```
+
+结果 **0**。两张表都有数据，但谁也 join 不上。
+
+根因：`scripts/load_mysql.py` 无条件调用 `load_station_map()`，读的是**站点级**的
+`站点列表.csv`（2000 多个监测点），而本项目跑的是**城市级**数据，编号体系完全不同。
+
+修法：新增 `src.db.build_station_frame(df, station_map=None)`，维表取值一律以事实表里
+真实出现过的 `(station, city)` 为准；只有站点级模式才用站点列表补 `station_name`。
+修完维表变成 **372 行**，`JOIN` 命中 **632,513 行**，未被用到的维表行 **0**。
+配套 `tests/test_station_frame.py`（8 个用例，不需要数据库）钉死这条规则：
+**维表的 station 必须和事实表完全一致，否则 join 不上**。
+
+**2. 看板默认只显示 6 个城市**
+
+`app/app.py` 的「城市」多选框默认值写的是 `cities[:6]`，所以一打开看板，
+指标卡显示「记录数 9,133 / 站点数 6」，而 README 里写的是 632,513 行 / 372 城 ——
+评审的人打开会以为数据量只有一万条。改成默认空选（= 全部城市）后，
+指标卡变成 **632,513 / 372 / 1,826 / 平均 AQI 83.0**，与 `data_quality.md` 的 82.97 对得上。
+
+顺带把 `st.dataframe(use_container_width=True)` 换成 `width="stretch"`
+（Streamlit 已提示 `use_container_width` 在 2025-12-31 之后移除）。
+
+### 验证方式（看板不只是「启动了」）
+
+`/_stcore/health` 返回 200 只能说明服务器起来了，不能说明脚本跑得通。
+所以额外用 `streamlit.testing.v1.AppTest` 在进程内执行整个 `app/app.py`：
+
+```python
+at = AppTest.from_file("app/app.py", default_timeout=180).run()
+assert not at.exception
+```
+
+结果：**无异常**，数据来源标注为 `MySQL · aqi_daily`（说明走的是数据库而不是本地 CSV），
+指标卡 632,513 / 372 / 1,826 / 83.0，动态相关系数说明也正常输出
+（「最高 pm10–pm10_24h r=1.00，最低 no2–o3 r=-0.33，正负号随筛选变化，只给数字不给解读」）。
+
+### 5 条查询的实际输出（节选）
+
+`o3_trend`：年均 O3-8h 99.64 → 94.39 μg/m³，超标率 **7.08% → 4.67%**，
+与 `reports/report.md` §4 一致 —— 又一次交叉验证了「O3 没有恶化」。
+
+`city_rank_pm25`：和田地区 116.42、喀什地区 92.03、克孜勒苏柯尔克孜自治州 80.93，
+与报告 §3 完全一致。
+
+### 未验证（比 R3 缩小）
+
+| 目标 | 状态 |
+|---|---|
+| `docker compose build app`（用 Dockerfile 构建自己的镜像） | **仍未跑** —— 这次只用官方 mysql 镜像 + 本机 `pip install`，没构建 app 镜像 |
+| `pip install -r requirements.txt` 全量 | 仍未跑（只装了实际用到的包） |
+| 看板图表的视觉渲染 | AppTest 无异常且 pyecharts 已装，但自定义组件的像素级渲染没有截图核对 |
+
+---
+
 ## 模板（下次运行照这个填）
 
 ```

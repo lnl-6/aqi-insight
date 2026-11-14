@@ -138,7 +138,7 @@ with st.sidebar:
 
     cities = sorted(df["city"].dropna().unique()) if "city" in df else []
     pick_cities = st.multiselect(
-        "城市", cities, default=cities[: min(6, len(cities))],
+        "城市", cities, default=[],
         help="不选等于全部城市",
     )
 
@@ -312,7 +312,7 @@ else:
 
 # ---- 数据表
 with st.expander("查看原始数据（前 500 行）"):
-    st.dataframe(view.head(500), use_container_width=True)
+    st.dataframe(view.head(500), width="stretch")
     st.download_button(
         "下载当前筛选结果 CSV",
         view.to_csv(index=False).encode("utf-8-sig"),

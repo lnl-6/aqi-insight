@@ -30,8 +30,9 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src import config                                    # noqa: E402
-from src.db import (create_schema, get_engine, load_daily_csv,  # noqa: E402
-                    ping, write_daily, write_stations)
+from src.db import (build_station_frame, create_schema,   # noqa: E402
+                    get_engine, load_daily_csv, ping,
+                    write_daily, write_stations)
 from src.stations import load_station_map                 # noqa: E402
 
 
@@ -67,9 +68,14 @@ def main() -> int:
 
     # 3. 站点维表
     print("[3/4] 写入站点维表 …")
-    station_map = load_station_map()
-    n_station = write_stations(station_map, engine)
-    print(f"      {n_station} 个站点" if n_station else "      （无站点列表，跳过）")
+    # 维表必须和事实表用同一套编号：城市级数据的 station 就是城市名，
+    # 直接从事实表推导；只有站点级才需要读「站点列表.csv」补站点名。
+    # （早期版本无条件读站点列表，结果维表塞了 2026 个站点编码、
+    #   事实表却是 372 个城市名，JOIN 命中 0 行。）
+    station_map = load_station_map() if config.DATA_LEVEL == "site" else None
+    station_df = build_station_frame(df, station_map)
+    n_station = write_stations(station_df, engine)
+    print(f"      {n_station} 个站点（由事实表推导，与事实表 station 一致）")
 
     # 4. 事实表
     print("[4/4] 写入事实表 …")

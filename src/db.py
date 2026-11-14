@@ -311,6 +311,47 @@ def write_daily(
     return {"mode": mode, "rows": len(payload), "deduped": 0, "affected": len(payload)}
 
 
+def build_station_frame(
+    df: pd.DataFrame,
+    station_map: pd.DataFrame | None = None,
+) -> pd.DataFrame:
+    """从**事实表本身**推导站点维表，而不是拿站点列表原样写进去。
+
+    为什么不能直接写站点列表：项目用的是城市级数据（`station` 列就是城市名，
+    共 372 个），而 `站点列表.csv` 描述的是**站点级**的 2000 多个监测点编码
+    （`1001A` 这种）。两者编号体系完全不同，直接写进去会导致
+    `aqi_daily JOIN station` 命中 0 行——维表看着有数据，其实谁也用不上。
+
+    所以维表的取值一律以事实表里**真实出现过的** `station` 为准；
+    站点映射只用来补 `station_name`（城市级数据没有站点名，留空）。
+    """
+    required = {"station", "city"}
+    missing = required - set(df.columns)
+    if missing:
+        raise KeyError(
+            f"推导站点维表需要 {sorted(required)}，当前缺少 {sorted(missing)}"
+            f"（现有列：{list(df.columns)}）"
+        )
+
+    pairs = df[["station", "city"]].dropna().drop_duplicates()
+    out = pd.DataFrame({
+        "station": pairs["station"].astype(str).str.strip(),
+        "city": pairs["city"].astype(str).str.strip(),
+        "station_name": pd.NA,
+    })
+
+    if (station_map is not None and not station_map.empty
+            and {"station", "station_name"} <= set(station_map.columns)):
+        known = station_map.dropna(subset=["station"]).drop_duplicates("station")
+        lookup = dict(zip(
+            known["station"].astype(str).str.strip(),
+            known["station_name"],
+        ))
+        out["station_name"] = out["station"].map(lookup)
+
+    return out.sort_values(["city", "station"]).reset_index(drop=True)
+
+
 def write_stations(station_map: pd.DataFrame, engine: Engine | None = None) -> int:
     """站点对照表单独一张维表，方便和事实表 join。"""
     engine = engine or get_engine()

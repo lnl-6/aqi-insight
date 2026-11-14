@@ -320,7 +320,8 @@ pytest --collect-only -q | tail -1
 > 用 `@pytest.mark.xfail` 标记。它存在的目的是练习「红 → 读报错 → 改 → 绿」这个循环。
 
 > ✅ **实测**：2026-11-08 首次运行 —— **50 passed, 1 xfailed，用时 1.14 s**；
-> 2026-11-09 加了幂等导入的 13 个用例后 —— **63 passed, 1 xfailed**（本机耗时 2~6 s，
+> 2026-11-09 加了幂等导入的 13 个用例后 —— **63 passed, 1 xfailed**；
+> 2026-11-14 加了站点维表推导的 8 个用例后 —— **71 passed, 1 xfailed**（本机耗时 2~4 s，
 > 取决于是否预热过缓存；这是一次实测，不是承诺）。
 > 首跑曾有 2 个用例报红，**两处都是测试自己写错**，不是被测代码的问题：
 > - `test_cleaning.py` 断言 AQI=73 应为「优」——按国标 51–100 是「良」，改断言
@@ -342,13 +343,14 @@ pytest --collect-only -q | tail -1
    占主导；「臭氧成为首要污染物」这类结论当前无法从本表直接得出，只能看 O3 超标率
 5. **未做 PM2.5 / O3 的机器学习预测** —— 那是另一个项目的范围
 6. **看板未做用户登录与权限** —— 单机演示用途，公开部署请自行加反向代理与鉴权
-7. **部分路径尚未验证** —— `prepare_data.py` / `make_report.py` / `pytest` 已于 2026-11-08
-   实际跑通；但 `scripts/load_mysql.py`（本机无 MySQL）、`scripts/run_queries.py`
-   与 Streamlit 看板（未安装 `streamlit` + `pyecharts`）**仍未实际运行过**，见 `docs/run-log.md`
+7. **全部路径已于 2026-11-14 实际跑通** —— `prepare_data.py` / `make_report.py` / `pytest`
+   在 2026-11-08 跑通；`docker compose up -d mysql` + `load_mysql.py` + `run_queries.py`
+   + Streamlit 看板在 2026-11-14 跑通（耗时与结果见 `docs/run-log.md` R4）。
+   仍然**没有验证**的是 `Dockerfile` 自己构建镜像（用的是官方 `mysql:8.0` 镜像 +
+   本地 `pip install`，没有 `docker compose build app`）
 8. **`O3_24h` 只有 60.4% 非空** —— 该指标在部分城市/年份未上报，涉及它时不能直接当完整样本用
-9. **幂等导入只验证了一半** —— 生成 MERGE 语句、表结构与导入列一致、去重逻辑都有测试
-   （`tests/test_db_sql.py`，13 个用例，不需要数据库）；但「同一份数据导入两遍行数不变」
-   必须连上 MySQL 才能确认，**尚未实跑**
+9. **幂等导入已验证** —— 2026-11-14 连跑两次 `load_mysql.py`，两次之后 `aqi_daily`
+   都是 **632,513 行 / 372 个 station / 暂存表 0 行**，行数与第一次完全一致
 10. **两座城市的观测极少** —— `三沙` 只有 3 天、`蓬莱` 只有 1 天（发布方本身缺数据）。
     城市排名要求「有效天数 ≥ 300」，这两座城市在排名里被自动排除，所以排名分母是 339 而不是 372
 
@@ -369,6 +371,10 @@ pytest --collect-only -q | tail -1
 | 280.9 s（0.15 s/日文件） | **运行时实测（2026-11-08）** | `docs/run-log.md` |
 | 50 passed / 1 xfailed | **运行时实测（2026-11-08）** | `docs/run-log.md` |
 | 63 passed / 1 xfailed | **运行时实测（2026-11-09）** | `docs/run-log.md` R2 |
+| 71 passed / 1 xfailed | **运行时实测（2026-11-14）** | `docs/run-log.md` R4 |
+| 导入 632,513 行 / 562.3 s / 1,125 行每秒 | **运行时实测（2026-11-14，真 MySQL 8.0）** | `docs/run-log.md` R4 |
+| 幂等：连导两次仍 632,513 行 | **运行时实测（2026-11-14）** | `docs/run-log.md` R4 |
+| 5 条 SQL 查询 7.9 s 跑完 | **运行时实测（2026-11-14）** | `reports/queries/*.csv` |
 | 全国 31.63 → 29.87（−5.6%） | **运行时实测** | `reports/report.md` §2、§7 |
 | t=−6.90, p=2.5e-11 / χ²=1431.4 | **运行时实测** | `reports/report.md` §6.1、§6.2 |
 | r(PM2.5,PM10)=0.77；r(PM2.5,O3)=−0.04 | **运行时实测** | `reports/report.md` §5 |
