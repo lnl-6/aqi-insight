@@ -16,7 +16,7 @@ from pathlib import Path
 
 # ---------------------------------------------------------------- 路径
 
-#: 项目根目录 = analysis/
+#: 项目根目录 = aqi-insight/
 ROOT = Path(__file__).resolve().parent.parent
 
 #: 读 .env（python-dotenv 缺失时静默跳过，仍然支持用系统环境变量配置）

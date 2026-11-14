@@ -76,7 +76,7 @@ date,hour,type,西安,北京,上海,...
 ## 3. 目录结构
 
 ```
-analysis/
+aqi-insight/
 ├── src/
 │   ├── config.py       路径、数据源发现、聚合口径、国标限值、DB 配置
 │   ├── io_utils.py     多编码兼容的 CSV 读取

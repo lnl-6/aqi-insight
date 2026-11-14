@@ -1,7 +1,7 @@
 # 空气质量数据分析报告（自动生成）
 
-- 生成时间：2026-11-08 17:35:52
-- 数据源：`D:\学习\analysis\data\processed\aqi_daily.csv.gz`
+- 生成时间：2026-11-14 19:26:57
+- 数据源：`D:\学习\aqi-insight\data\processed\aqi_daily.csv.gz`
 - 生成命令：`python scripts/make_report.py`
 - scipy 可用：是
 
