@@ -1,0 +1,19 @@
+# 核心
+pandas>=2.0
+numpy>=1.24
+# 可视化
+matplotlib>=3.7
+# 统计检验
+scipy>=1.10
+# 数据库
+sqlalchemy>=2.0
+pymysql>=1.1
+# 看板
+streamlit>=1.30
+pyecharts>=2.0
+streamlit-echarts>=0.4
+# 工程
+tqdm>=4.66
+python-dotenv>=1.0
+# 测试
+pytest>=7.4
