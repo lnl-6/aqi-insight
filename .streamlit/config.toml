@@ -1,0 +1,30 @@
+# Streamlit 的运行配置。
+#
+# 这个文件解决三件事：
+#   1. 去掉右上角的「Deploy」按钮和它的英文弹窗
+#      —— 那是 Streamlit 自带的发布引导，本地跑没必要露给读者看；
+#   2. 统一配色，让页面里的图表主色和标题区渐变一致；
+#   3. 关掉使用统计上报。
+
+[client]
+# auto / developer / viewer / minimal
+#   auto       默认，会显示 Deploy 按钮（之前就是它在弹英文窗口）
+#   developer  显示开发者工具栏
+#   viewer     隐藏开发者工具栏
+#   minimal    连 Deploy 按钮一起隐藏 ← 用这个
+toolbarMode = "minimal"
+# 单文件应用不需要左上角的页面导航
+showSidebarNavigation = false
+
+[theme]
+primaryColor = "#0e7490"
+backgroundColor = "#f8fafc"
+secondaryBackgroundColor = "#ffffff"
+textColor = "#0f172a"
+font = "sans serif"
+
+[browser]
+gatherUsageStats = false
+
+[server]
+headless = true

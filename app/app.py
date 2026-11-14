@@ -41,7 +41,19 @@ try:  # 列名映射要和 MySQL 那张表对齐，缺 sqlalchemy 时退化成�
 except Exception:  # pragma: no cover
     COLUMN_RENAMES = {}
 
-st.set_page_config(page_title="全国城市空气质量看板", page_icon="🌫️", layout="wide")
+st.set_page_config(
+    page_title="全国城市空气质量看板",
+    page_icon="🌫️",
+    layout="wide",
+    # 右上角菜单默认是英文的 Get help / Report a bug / About，
+    # 这是个给读者看的作品页，不是给开发者调试的，所以全部关掉。
+    # （Deploy 按钮由 .streamlit/config.toml 的 toolbarMode = "minimal" 负责隐藏）
+    menu_items={
+        "Get Help": None,
+        "Report a bug": None,
+        "About": None,
+    },
+)
 
 
 # ---------------------------------------------------------------- 中文名与配色
@@ -163,6 +175,15 @@ st.markdown(
         border-top: 1px solid #e2e8f0;
         color: #94a3b8; font-size: 12px; line-height: 1.9;
     }
+
+    /* 藏掉 Streamlit 自带的英文元件：Deploy 按钮、右上角菜单、状态灯。
+       toolbarMode 已经在 config.toml 里设成 minimal，这里是双保险，
+       因为不同版本对 Deploy 按钮的 DOM 类名不一样。 */
+    .stDeployButton {display: none;}
+    div[data-testid="stToolbar"] {display: none;}
+    div[data-testid="stStatusWidget"] {display: none;}
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
     </style>
     """,
     unsafe_allow_html=True,
