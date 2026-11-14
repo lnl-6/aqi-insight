@@ -391,6 +391,104 @@ assert not at.exception
 
 ---
 
+## R5 · 2026-11-14 修「点一下筛选就卡住」
+
+### 现象
+
+用户反馈：在侧边栏改任何筛选条件，页面要等很久才有反应。
+
+### 怎么定位的
+
+不猜，逐项计时。先把看板里每个计算块单独拎出来跑一遍（632,513 行）：
+
+| 环节 | 耗时 |
+|---|---|
+| 读 CSV + 重命名（已被 `@st.cache_data` 包住） | 4.107 s |
+| `_prepare`（60 万行 `to_period`） | 0.781 s |
+| `view = df[city.isin(...)]` | 0.045 s |
+| 城市排名 groupby | 0.062 s |
+| `corr`（10 列 × 63 万行） | 0.334 s |
+| `value_counts` | 0.035 s |
+| 月度 groupby | 0.065 s |
+| **`view.to_csv(index=False).encode("utf-8-sig")`** | **19.028 s（产物 117.4 MB）** |
+| 只取前 500 行 | 0.019 s |
+
+`cProfile` 再抓一遍，又抓到第二个：
+
+```
+ncalls     tottime   function
+4428067    24.796    pandas/core/arrays/arrow/array.py:819(__iter__)
+```
+
+4,428,067 ÷ 632,513 = **正好 7**。
+
+### 两个根因
+
+**1. 下载按钮的参数在每次 rerun 都会求值。**
+`st.download_button(data=view.to_csv(...))` 写在调用参数里，于是每动一次筛选，
+Streamlit 都要先把全表序列化成 117 MB 的 CSV，等 19 秒，才轮到页面重绘。
+**修法**：默认只给「下载这 500 行（秒出）」；完整 CSV 改成勾选框，勾了才生成，
+并按当前筛选条件签名存进 `st.session_state["_full_csv"]` 复用。
+
+**2. 推导式的 `if` 条件里调用了 `set(...)`。**
+
+```python
+# 错：set(...) 每轮重建一次
+[x for x in levels if x in set(df["aqi_level"])]
+```
+
+`AQI_LEVEL_ORDER` 正好 7 个等级，于是 `set(63 万行)` 被建了 7 次 = 442 万次字符串迭代。
+pandas 3.0 的字符串列是 arrow-backed，逐元素 `__iter__` 极慢 → 25 秒。
+
+```python
+# 对：提到推导式外面
+present_levels = set(df["aqi_level"].dropna().unique())
+[x for x in levels if x in present_levels]
+```
+
+### 修复后实测（`streamlit.testing.v1.AppTest`，连续改 4 次筛选）
+
+| 操作 | 修复前 | 修复后 |
+|---|---|---|
+| 改筛选 第 1 次 | 29.44 s | **0.18 s** |
+| 改筛选 第 2 次 | — | **0.19 s** |
+| 改筛选 第 3 次 | — | **0.51 s** |
+| 改年份筛选 | — | **0.36 s** |
+| 异常数 | 0 | 0 |
+
+### 顺手处理冷启动
+
+`db.read_daily()` 读 632,513 行 × 23 列（纯 pymysql）实测 **26.1 s / 53.3 s**，每次重启看板都要重付。
+
+- 先试了 Streamlit 自带的 `@st.cache_data(persist="disk")`：**实测无效**——
+  换进程仍然全量重读，`~/.streamlit` 下也没生成缓存目录（1.67.0）。
+  用一个 2 秒的假函数单独验证过，新进程照样 2.0 s。**所以没有采用，也没有在 README 里宣称它有用来着。**
+- 改成自己做一层最小缓存：用事实表 `COUNT(*)`（实测 0.27 s）当版本号，
+  行数没变就直接读 `data/interim/dashboard_cache.parquet`。
+- 实测：第一次（读 MySQL + 写缓存）68.34 s（当时机器负载高）；**换进程第二次 4.72 s**。
+
+### 踩到的坑
+
+`exec_driver_sql` 是 `Connection` 的方法，不是 `Engine` 的。第一版写成
+`engine.exec_driver_sql(...)` 直接抛 `AttributeError`，而它被 `load_data()` 外层的
+`except` 吞掉、静默退回本地 CSV —— 页面照常出数，**看不出任何异常**。
+这种「静默降级」最难查，所以在 `db_error` 的 expander 里保留完整报错。
+
+### 命令与结果
+
+| # | 命令 | 结果 |
+|---|---|---|
+| 1 | `python -m pytest -q` | **71 passed, 1 xfailed** |
+| 2 | `python -m compileall -q app src scripts tests conftest.py` | 通过，退出码 0 |
+| 3 | `AppTest` 连续 4 次改筛选 | 0.18 / 0.19 / 0.51 / 0.36 s，异常 0 |
+| 4 | 重启看板 + `/_stcore/health` | 200 ok |
+
+### 未验证（与 R4 相同）
+
+`docker compose build app`、`pip install -r requirements.txt` 全量、图表像素级渲染。
+
+---
+
 ## 模板（下次运行照这个填）
 
 ```

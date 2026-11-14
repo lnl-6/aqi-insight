@@ -23,6 +23,7 @@
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -210,6 +211,41 @@ except ImportError:  # pragma: no cover
 
 # ---------------------------------------------------------------- 读数据
 
+#: 看板自己的落盘缓存。Streamlit 自带的 `persist="disk"` 在本机（1.67.0）
+#: 实测不生效——换进程仍是全量重读、`~/.streamlit` 下也没生成缓存目录。
+#: 所以这里做一层最小实现：用事实表行数当版本号，命中就直接读 parquet。
+_DASH_CACHE = config.INTERIM_DIR / "dashboard_cache.parquet"
+_DASH_META = config.INTERIM_DIR / "dashboard_cache.json"
+
+
+def _read_daily_cached():
+    """从 MySQL 读事实表，带一层按「行数」失效的 parquet 缓存。"""
+    from src.db import get_engine, read_daily
+
+    engine = get_engine()
+    # COUNT(*) 实测 0.27 s，比读 63 万行便宜两个数量级，够当版本号用。
+    # 注意 exec_driver_sql 在 Connection 上，不在 Engine 上。
+    with engine.connect() as conn:
+        rows = int(conn.exec_driver_sql(f"SELECT COUNT(*) FROM {config.TABLE_DAILY}").scalar() or 0)
+
+    if _DASH_CACHE.exists() and _DASH_META.exists():
+        try:
+            meta = json.loads(_DASH_META.read_text(encoding="utf-8"))
+            if int(meta.get("rows", -1)) == rows:
+                return pd.read_parquet(_DASH_CACHE), rows
+        except Exception:  # noqa: BLE001 —— 缓存坏了就重建，不该让页面崩
+            pass
+
+    df = read_daily(engine)
+    try:
+        config.INTERIM_DIR.mkdir(parents=True, exist_ok=True)
+        df.to_parquet(_DASH_CACHE, index=False)
+        _DASH_META.write_text(json.dumps({"rows": rows}), encoding="utf-8")
+    except Exception:  # noqa: BLE001 —— 写缓存失败不影响出数
+        pass
+    return df, rows
+
+
 @st.cache_data(show_spinner="正在读取数据 …")
 def load_data() -> tuple[pd.DataFrame, str, str | None]:
     """返回 (数据, 来源描述, 数据库报错)。
@@ -219,13 +255,11 @@ def load_data() -> tuple[pd.DataFrame, str, str | None]:
     """
     db_error: str | None = None
 
-    # 1) MySQL
+    # 1) MySQL（经 parquet 缓存，冷启动从 26 s 降到 1 s 左右）
     try:
-        from src.db import get_engine, read_daily
-
-        df = read_daily(get_engine())
+        df, _rows = _read_daily_cached()
         if df is not None and not df.empty:
-            return _prepare(df), "MySQL · aqi_daily", None
+            return _prepare(df), "MySQL · aqi_daily（本地 parquet 缓存）", None
     except Exception as exc:  # noqa: BLE001 —— 数据库没配好是正常情况，不该让页面崩
         db_error = f"{type(exc).__name__}: {exc}"
 
@@ -320,7 +354,12 @@ with st.sidebar:
     )
 
     levels = AQI_LEVEL_ORDER
-    pick_levels = st.multiselect("AQI 等级", [x for x in levels if x in set(df.get("aqi_level", []))],
+    # ⚠️ set(...) 必须提到推导式外面。
+    # 之前写成 [x for x in levels if x in set(df["aqi_level"])]，set 在 if 条件里，
+    # 每轮都要重建一次：7 个等级 × 632,513 行 = 442 万次字符串迭代，实测 25 秒，
+    # 表现就是「点一下筛选，页面卡半天」。
+    present_levels = set(df["aqi_level"].dropna().unique()) if "aqi_level" in df.columns else set()
+    pick_levels = st.multiselect("AQI 等级", [x for x in levels if x in present_levels],
                                  default=[])
 
     st.divider()
@@ -504,17 +543,44 @@ if len(corr_cols) >= 3:
 else:
     st.info("数值列不足 3 个，无法画相关性热力图。")
 
-# ---- 数据表
-with st.expander("查看原始数据（前 500 行）"):
+# ---- 数据表与下载
+with st.expander("查看原始数据 / 下载"):
     # 表格里也换成中文列名，但下载的 CSV 保留原始列名，方便后续用 SQL / pandas 接着处理
     show = view.head(500).rename(columns=lambda c: zh(c))
     st.dataframe(show, width="stretch")
+    st.caption(f"上面显示前 500 行；当前筛选共有 {len(view):,} 行。")
+
     st.download_button(
-        "下载当前筛选结果（CSV，列名保留原始字段）",
-        view.to_csv(index=False).encode("utf-8-sig"),
-        file_name="aqi_filtered.csv",
+        "下载这 500 行（秒出）",
+        view.head(500).to_csv(index=False).encode("utf-8-sig"),
+        file_name="aqi_preview.csv",
         mime="text/csv",
+        key="dl_preview",
     )
+
+    st.divider()
+    # 全量序列化要 19 秒、产物 117 MB。绝不能放在每次 rerun 都执行的位置——
+    # 之前就是写在 download_button 的参数里，导致动一下筛选就要等 19 秒，
+    # 表现得像「页面卡死」。现在改成显式勾选才生成，并按筛选条件缓存。
+    st.caption(
+        "完整结果约 117 MB、序列化需要 20 秒左右。所以默认不生成——"
+        "否则每动一次筛选，页面都要先把这份 CSV 造完才能响应。"
+    )
+    want_full = st.checkbox("生成完整筛选结果 CSV（约 20 秒）", key="want_full_csv")
+    if want_full:
+        sig = (tuple(pick_cities), tuple(pick_years), tuple(pick_levels))
+        cached = st.session_state.get("_full_csv")
+        if cached is None or cached[0] != sig:
+            with st.spinner("正在生成 CSV，大约 20 秒 …"):
+                cached = (sig, view.to_csv(index=False).encode("utf-8-sig"))
+            st.session_state["_full_csv"] = cached
+        st.download_button(
+            "下载完整结果（列名保留原始字段）",
+            cached[1],
+            file_name="aqi_filtered.csv",
+            mime="text/csv",
+            key="dl_full",
+        )
 
 st.markdown(
     """

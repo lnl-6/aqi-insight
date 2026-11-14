@@ -31,6 +31,9 @@ data/processed/
 # SQL 查询的输出（跑 run_queries.py 生成，样例见 docs/run-log.md）
 reports/queries/
 
+# Streamlit 落盘缓存（persist="disk" 的产物，会到几百 MB）
+.streamlit/cache/
+
 # 系统
 .DS_Store
 Thumbs.db
