@@ -44,6 +44,131 @@ except Exception:  # pragma: no cover
 st.set_page_config(page_title="全国城市空气质量看板", page_icon="🌫️", layout="wide")
 
 
+# ---------------------------------------------------------------- 中文名与配色
+# 页面上一律显示中文；数据库列名只在导出 CSV 和数据表里保留原文，
+# 免得看板里全是 pm25_24h / o3_8h_24h 这种英文加下划线。
+
+POLLUTANT_LABELS: dict[str, str] = {
+    "aqi": "AQI",
+    "pm25": "PM2.5",
+    "pm25_24h": "PM2.5（24 小时均值）",
+    "pm10": "PM10",
+    "pm10_24h": "PM10（24 小时均值）",
+    "so2": "SO₂",
+    "so2_24h": "SO₂（24 小时均值）",
+    "no2": "NO₂",
+    "no2_24h": "NO₂（24 小时均值）",
+    "o3": "O₃",
+    "o3_24h": "O₃（24 小时均值）",
+    "o3_8h": "O₃（8 小时滑动）",
+    "o3_8h_24h": "O₃（8 小时滑动 24 小时均值）",
+    "co": "CO",
+    "co_24h": "CO（24 小时均值）",
+}
+
+#: 轴标签、图例、表格里用短名，卡片标题里用长名
+SHORT_LABELS: dict[str, str] = {
+    "aqi": "AQI",
+    "pm25": "PM2.5", "pm25_24h": "PM2.5",
+    "pm10": "PM10", "pm10_24h": "PM10",
+    "so2": "SO₂", "so2_24h": "SO₂",
+    "no2": "NO₂", "no2_24h": "NO₂",
+    "o3": "O₃", "o3_24h": "O₃", "o3_8h": "O₃-8h", "o3_8h_24h": "O₃-8h",
+    "co": "CO", "co_24h": "CO",
+}
+
+#: 国标 AQI 六级的官方配色（HJ 633-2012），稍作加深以便在白底上看清
+AQI_LEVEL_COLORS: dict[str, str] = {
+    "优": "#00b050",
+    "良": "#d4b106",
+    "轻度污染": "#e8730c",
+    "中度污染": "#d32020",
+    "重度污染": "#8e3f97",
+    "严重污染": "#6b0f1a",
+    "未知": "#94a3b8",
+}
+AQI_LEVEL_ORDER = ["优", "良", "轻度污染", "中度污染", "重度污染", "严重污染", "未知"]
+
+
+def zh(col: str, short: bool = False) -> str:
+    """列名 → 中文显示名。没登记过的列原样返回，不会崩。"""
+    return (SHORT_LABELS if short else POLLUTANT_LABELS).get(col, col)
+
+
+def pollutant_unit(col: str) -> str:
+    """浓度列的单位；AQI 是无量纲指数。"""
+    return "" if col.startswith("aqi") else " μg/m³"
+
+
+# ---------------------------------------------------------------- 页面样式
+
+st.markdown(
+    """
+    <style>
+    /* 整体：浅灰底 + 更松的行距，长时间看表不刺眼 */
+    .stApp {
+        background: linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%);
+    }
+    .block-container {padding-top: 2.2rem; padding-bottom: 3rem; max-width: 1400px;}
+
+    /* 顶部标题区 */
+    .aqi-hero {
+        background: linear-gradient(120deg, #0f766e 0%, #0e7490 55%, #1d4ed8 100%);
+        border-radius: 18px;
+        padding: 26px 32px;
+        color: #ffffff;
+        box-shadow: 0 10px 30px rgba(15, 118, 110, .25);
+        margin-bottom: 22px;
+    }
+    .aqi-hero h1 {font-size: 30px; margin: 0 0 6px 0; font-weight: 700; letter-spacing: .5px;}
+    .aqi-hero p  {margin: 0; opacity: .92; font-size: 14px; line-height: 1.7;}
+    .aqi-hero .tag {
+        display: inline-block; padding: 2px 10px; margin-right: 8px;
+        background: rgba(255,255,255,.18); border-radius: 999px;
+        font-size: 12px; backdrop-filter: blur(4px);
+    }
+
+    /* 四个指标卡 */
+    div[data-testid="stMetric"] {
+        background: #ffffff;
+        border-radius: 14px;
+        padding: 16px 18px;
+        border: 1px solid #e2e8f0;
+        box-shadow: 0 2px 10px rgba(15, 23, 42, .05);
+    }
+    div[data-testid="stMetricLabel"] p {font-size: 13px; color: #64748b;}
+    div[data-testid="stMetricValue"] {
+        font-size: 28px; font-weight: 700; color: #0f172a;
+    }
+
+    /* 侧边栏 */
+    section[data-testid="stSidebar"] {
+        background: #ffffff;
+        border-right: 1px solid #e2e8f0;
+    }
+    section[data-testid="stSidebar"] h2 {font-size: 17px; color: #0f172a;}
+
+    /* 小标题前加一道竖条 */
+    h3 {border-left: 4px solid #0e7490; padding-left: 10px; margin-top: 6px;}
+
+    /* 图表容器 */
+    div[data-testid="stVerticalBlock"] > div:has(> div.element-container div[data-testid="stVegaLiteChart"]),
+    .stEcharts {
+        background: #ffffff; border-radius: 14px; padding: 8px;
+    }
+
+    /* 页脚 */
+    .aqi-footer {
+        margin-top: 36px; padding-top: 14px;
+        border-top: 1px solid #e2e8f0;
+        color: #94a3b8; font-size: 12px; line-height: 1.9;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+
 # ---------------------------------------------------------------- 可选依赖
 
 try:
@@ -118,8 +243,23 @@ def render_echarts(chart, key: str) -> None:
 
 df, source, db_error = load_data()
 
-st.title("🌫️ 全国城市空气质量看板")
-st.caption(f"数据来源：{source}")
+st.markdown(
+    f"""
+    <div class="aqi-hero">
+      <h1>🌫️ 全国城市空气质量看板</h1>
+      <p>
+        <span class="tag">数据来源 {source}</span>
+        <span class="tag">城市级 · 日观测</span>
+        <span class="tag">判级依据 GB 3095-2012</span>
+      </p>
+      <p style="margin-top:10px;">
+        2021–2025 年全国地级及以上城市的逐日空气质量。左侧可按城市、年份、污染物和
+        AQI 等级筛选，下面四张图分别回答「谁最差」「差到什么程度」「什么时候差」「为什么差」。
+      </p>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
 if df.empty:
     st.error(
@@ -151,10 +291,14 @@ with st.sidebar:
         if pd.api.types.is_numeric_dtype(df[c]) and c not in {"year", "aqi_hours", "month"}
     ]
     pollutant = st.selectbox(
-        "污染物", numeric_cols, index=numeric_cols.index("pm25_24h") if "pm25_24h" in numeric_cols else 0,
+        "污染物",
+        numeric_cols,
+        index=numeric_cols.index("pm25_24h") if "pm25_24h" in numeric_cols else 0,
+        format_func=lambda c: f"{zh(c)}（{c}）" if zh(c) != c else c,
+        help="下拉里显示的是中文名，括号里是对应的数据列",
     )
 
-    levels = ["优", "良", "轻度污染", "中度污染", "重度污染", "严重污染", "未知"]
+    levels = AQI_LEVEL_ORDER
     pick_levels = st.multiselect("AQI 等级", [x for x in levels if x in set(df.get("aqi_level", []))],
                                  default=[])
 
@@ -177,10 +321,13 @@ if view.empty:
 
 # ---- 指标卡
 c1, c2, c3, c4 = st.columns(4)
-c1.metric("记录数", f"{len(view):,}")
-c2.metric("站点数", f"{view['station'].nunique():,}" if "station" in view else "—")
-c3.metric("覆盖天数", f"{view['date'].nunique():,}" if "date" in view else "—")
-c4.metric("平均 AQI", f"{view['aqi'].mean():.1f}" if "aqi" in view else "—")
+c1.metric("记录数", f"{len(view):,}", help="当前筛选下的城市-日观测条数")
+c2.metric("城市数", f"{view['station'].nunique():,}" if "station" in view else "—",
+          help="不同的监测对象数量（城市级数据里即城市数）")
+c3.metric("覆盖天数", f"{view['date'].nunique():,}" if "date" in view else "—",
+          help="当前筛选覆盖的自然日天数")
+c4.metric("平均 AQI", f"{view['aqi'].mean():.1f}" if "aqi" in view else "—",
+          help="AQI 是无量纲指数：0–50 优、51–100 良、101–150 轻度污染、151–200 中度污染、201–300 重度污染、300 以上严重污染")
 
 st.divider()
 
@@ -188,7 +335,8 @@ st.divider()
 left, right = st.columns(2)
 
 with left:
-    st.subheader(f"各城市平均 {pollutant}")
+    st.subheader(f"城市排名 · {zh(pollutant)}")
+    st.caption(f"按「{zh(pollutant)}」的多年均值排序，只显示最差的 20 个城市。")
     if "city" in view and pollutant in view:
         city_mean = (
             view.groupby("city")[pollutant].mean().dropna()
@@ -200,11 +348,14 @@ with left:
             chart = (
                 Bar(init_opts=opts.InitOpts(width="100%", height="420px"))
                 .add_xaxis([i[0] for i in items])
-                .add_yaxis(pollutant, [i[1] for i in items],
+                .add_yaxis(f"{zh(pollutant, short=True)}{pollutant_unit(pollutant)}",
+                           [i[1] for i in items],
                            label_opts=opts.LabelOpts(is_show=True, position="right"))
                 .reversal_axis()
                 .set_global_opts(
-                    xaxis_opts=opts.AxisOpts(name=pollutant),
+                    title_opts=opts.TitleOpts(
+                        title=f"浓度最高的 20 个城市（{zh(pollutant)}）", subtitle="单位：μg/m³" if pollutant_unit(pollutant) else ""),
+                    xaxis_opts=opts.AxisOpts(name=f"{zh(pollutant, short=True)}{pollutant_unit(pollutant)}"),
                     yaxis_opts=opts.AxisOpts(type_="category"),
                     legend_opts=opts.LegendOpts(is_show=False),
                 )
@@ -216,19 +367,28 @@ with left:
 # ---- 图 2：AQI 等级占比饼图
 with right:
     st.subheader("AQI 等级占比")
+    st.caption("按《环境空气质量指数（AQI）技术规定》HJ 633-2012 的六级划分配色。")
     if "aqi_level" in view:
         level_count = view["aqi_level"].value_counts()
         level_count = level_count[level_count > 0]
+        # 按国标顺序排列，颜色与全国空气质量发布平台一致，读者凭颜色就能判级
+        ordered = [lv for lv in AQI_LEVEL_ORDER if lv in level_count.index]
         if not level_count.empty and HAS_PYECHARTS:
             chart = (
                 Pie(init_opts=opts.InitOpts(width="100%", height="420px"))
                 .add(
                     series_name="等级占比",
-                    data_pair=[(str(k), int(v)) for k, v in level_count.items()],
-                    radius=["35%", "65%"],
+                    data_pair=[(str(k), int(level_count[k])) for k in ordered],
+                    radius=["38%", "66%"],
                 )
-                .set_global_opts(legend_opts=opts.LegendOpts(pos_bottom="0%"))
-                .set_series_opts(label_opts=opts.LabelOpts(formatter="{b}: {d}%"))
+                .set_colors([AQI_LEVEL_COLORS[k] for k in ordered])
+                .set_global_opts(
+                    title_opts=opts.TitleOpts(title="空气质量等级分布", subtitle="环形内圈为占比"),
+                    legend_opts=opts.LegendOpts(pos_bottom="0%"),
+                )
+                .set_series_opts(
+                    label_opts=opts.LabelOpts(formatter="{b}\n{d}%"),
+                )
             )
             render_echarts(chart, key="pie_level")
         else:
@@ -237,7 +397,8 @@ with right:
 st.divider()
 
 # ---- 图 3：月度趋势
-st.subheader(f"{pollutant} 月度趋势")
+st.subheader(f"逐月走势 · {zh(pollutant)}")
+st.caption("按「年-月」求均值，一条线从 2021-01 走到 2025-12 共 60 个点；拖动下方滑块可缩放。")
 if "month" in view and pollutant in view:
     trend = view.groupby("month")[pollutant].mean().dropna().sort_index()
     if not trend.empty and HAS_PYECHARTS:
@@ -245,17 +406,24 @@ if "month" in view and pollutant in view:
             Line(init_opts=opts.InitOpts(width="100%", height="380px"))
             .add_xaxis(trend.index.tolist())
             .add_yaxis(
-                f"{pollutant} 月均",
+                f"{zh(pollutant, short=True)} 月均",
                 trend.round(2).tolist(),
                 is_smooth=True,
                 markpoint_opts=opts.MarkPointOpts(
                     data=[opts.MarkPointItem(type_="max", name="最高"),
                           opts.MarkPointItem(type_="min", name="最低")]
                 ),
+                markline_opts=opts.MarkLineOpts(
+                    data=[opts.MarkLineItem(type_="average", name="五年平均")]
+                ),
             )
             .set_global_opts(
-                xaxis_opts=opts.AxisOpts(name="月份", axislabel_opts=opts.LabelOpts(rotate=45)),
-                yaxis_opts=opts.AxisOpts(name=pollutant),
+                title_opts=opts.TitleOpts(
+                    title=f"{zh(pollutant)} 的逐月走势",
+                    subtitle=f"单位：{pollutant_unit(pollutant).strip() or '无量纲'}",
+                ),
+                xaxis_opts=opts.AxisOpts(name="年月", axislabel_opts=opts.LabelOpts(rotate=45)),
+                yaxis_opts=opts.AxisOpts(name=f"{zh(pollutant, short=True)}{pollutant_unit(pollutant)}"),
                 datazoom_opts=[opts.DataZoomOpts(range_start=0, range_end=100)],
             )
         )
@@ -266,7 +434,8 @@ if "month" in view and pollutant in view:
 st.divider()
 
 # ---- 图 4：污染物相关性热力图
-st.subheader("污染物相关性（Pearson）")
+st.subheader("污染物相关性 · 皮尔逊系数")
+st.caption("蓝色表示负相关、红色表示正相关，白色表示几乎无关。相关不等于因果。")
 corr_cols = [c for c in numeric_cols if view[c].notna().sum() > 10][:10]
 if len(corr_cols) >= 3:
     corr = view[corr_cols].corr().round(2)
@@ -278,12 +447,16 @@ if len(corr_cols) >= 3:
         ]
         chart = (
             HeatMap(init_opts=opts.InitOpts(width="100%", height="440px"))
-            .add_xaxis(corr_cols)
+            .add_xaxis([zh(c, short=True) for c in corr_cols])
             .add_yaxis(
-                "相关系数", corr_cols, data,
+                "相关系数", [zh(c, short=True) for c in corr_cols], data,
                 label_opts=opts.LabelOpts(is_show=True, position="inside"),
             )
             .set_global_opts(
+                title_opts=opts.TitleOpts(
+                    title="污染物之间的相关系数矩阵",
+                    subtitle="r 取值 −1 ~ 1；越接近 ±1 线性关系越强",
+                ),
                 visualmap_opts=opts.VisualMapOpts(
                     min_=-1, max_=1, is_piecewise=False,
                     range_color=["#3b82f6", "#f8fafc", "#ef4444"],
@@ -303,8 +476,8 @@ if len(corr_cols) >= 3:
         top_pos = max(pairs, key=lambda x: x[2])
         top_neg = min(pairs, key=lambda x: x[2])
         st.caption(
-            f"当前筛选下相关系数最高的是 {top_pos[0]}–{top_pos[1]}（r = {top_pos[2]:.2f}），"
-            f"最低的是 {top_neg[0]}–{top_neg[1]}（r = {top_neg[2]:.2f}）。"
+            f"当前筛选下相关系数最高的是 {zh(top_pos[0], short=True)}–{zh(top_pos[1], short=True)}（r = {top_pos[2]:.2f}），"
+            f"最低的是 {zh(top_neg[0], short=True)}–{zh(top_neg[1], short=True)}（r = {top_neg[2]:.2f}）。"
             "正负号会随城市 / 年份 / 季节变化，所以这里只给数字，不给解读。"
         )
 else:
@@ -312,10 +485,24 @@ else:
 
 # ---- 数据表
 with st.expander("查看原始数据（前 500 行）"):
-    st.dataframe(view.head(500), width="stretch")
+    # 表格里也换成中文列名，但下载的 CSV 保留原始列名，方便后续用 SQL / pandas 接着处理
+    show = view.head(500).rename(columns=lambda c: zh(c))
+    st.dataframe(show, width="stretch")
     st.download_button(
-        "下载当前筛选结果 CSV",
+        "下载当前筛选结果（CSV，列名保留原始字段）",
         view.to_csv(index=False).encode("utf-8-sig"),
         file_name="aqi_filtered.csv",
         mime="text/csv",
     )
+
+st.markdown(
+    """
+    <div class="aqi-footer">
+      数据来源：全国城市空气质量历史数据（quotsoft.net，原始发布方为中国环境监测总站）<br>
+      判级依据：GB 3095-2012《环境空气质量标准》二级限值 ＋ HJ 633-2012《环境空气质量指数（AQI）技术规定》<br>
+      口径提醒：城市级数据的 station 就是城市名；排名只统计有效天数 ≥ 300 的城市；
+      相关与显著性均由数据实算，页面不预设结论。
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
