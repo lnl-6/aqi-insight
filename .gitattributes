@@ -1,0 +1,29 @@
+# 统一换行符：仓库里一律存 LF
+#
+# 为什么需要这个文件：项目在 Windows 上开发（core.autocrlf=true 会把检出变成 CRLF），
+# 但 Dockerfile / SQL / 容器内的 shell 在 Linux 上跑，CRLF 会让 `RUN` 与 SQL 语句
+# 出现难以定位的失败（典型症状：`/bin/sh: syntax error: unexpected` 或
+# `Unknown command '\r'`）。这里显式钉成 LF，不依赖每个人的本地配置。
+
+* text=auto
+
+*.py       text eol=lf
+*.sql      text eol=lf
+*.md       text eol=lf
+*.yml      text eol=lf
+*.yaml     text eol=lf
+*.txt      text eol=lf
+*.cfg      text eol=lf
+*.toml     text eol=lf
+*.sh       text eol=lf
+Dockerfile text eol=lf
+
+# Windows 批处理必须是 CRLF，否则 cmd 解析异常
+*.bat      text eol=crlf
+*.cmd      text eol=crlf
+
+# 二进制文件不参与换行符转换
+*.gz       binary
+*.zip      binary
+*.png      binary
+*.jpg      binary
