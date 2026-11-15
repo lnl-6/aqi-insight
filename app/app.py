@@ -46,6 +46,8 @@ st.set_page_config(
     page_title="全国城市空气质量看板",
     page_icon="🌫️",
     layout="wide",
+    # 显式要求侧边栏展开：筛选器都在 st.sidebar 里，默认折叠会让人以为「没有筛选」。
+    initial_sidebar_state="expanded",
     # 右上角菜单默认是英文的 Get help / Report a bug / About，
     # 这是个给读者看的作品页，不是给开发者调试的，所以全部关掉。
     # （Deploy 按钮由 .streamlit/config.toml 的 toolbarMode = "minimal" 负责隐藏）
@@ -181,10 +183,15 @@ st.markdown(
        toolbarMode 已经在 config.toml 里设成 minimal，这里是双保险，
        因为不同版本对 Deploy 按钮的 DOM 类名不一样。 */
     .stDeployButton {display: none;}
-    div[data-testid="stToolbar"] {display: none;}
     div[data-testid="stStatusWidget"] {display: none;}
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
+
+    /* ⚠️ 绝对不要写 div[data-testid="stToolbar"] {display: none}。
+       2026-11-15 实测：stToolbar 里除了 Deploy 按钮，还装着「展开侧边栏」的那个箭头
+       （data-testid="stExpandSidebarButton"）。把它整个藏掉，侧边栏一旦收起就再也点不开，
+       表现就是「左侧筛选看板没了」。
+       隐藏 Deploy 用 config.toml 的 toolbarMode = "minimal" 就够了，别动 DOM。 */
     </style>
     """,
     unsafe_allow_html=True,

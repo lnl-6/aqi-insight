@@ -13,8 +13,9 @@
 #   viewer     隐藏开发者工具栏
 #   minimal    连 Deploy 按钮一起隐藏 ← 用这个
 toolbarMode = "minimal"
-# 单文件应用不需要左上角的页面导航
-showSidebarNavigation = false
+# ⚠️ 不要加 showSidebarNavigation = false。
+#    2026-11-15 实测：加上它之后整个左侧栏（包括 st.sidebar 里的筛选控件）都不再显示，
+#    不是只藏掉多页导航。本项目的筛选器全靠侧边栏，代价太大，故移除。
 
 [theme]
 primaryColor = "#0e7490"
