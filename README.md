@@ -4,11 +4,6 @@
 清洗成 **632,513 行 × 24 列**的日级事实表，存进 MySQL，再用 Streamlit + Pyecharts
 做成可按 **城市 / 年份 / 污染物 / AQI 等级** 四维筛选的在线看板。
 
-一句话：**从 5 个年度压缩包，到一条能在浏览器里点开的结论。**
-
-看板里的每个数字都是页面实时算的，报告里的每个数字都由脚本产出——
-`README` 不预写任何规模、耗时、排名、相关系数（理由见
-[docs/findings.md](docs/findings.md) 的数字溯源表）。
 
 ---
 
@@ -131,17 +126,6 @@ aqi-insight/
 ├── Dockerfile · docker-compose.yml
 └── reports/        report.md · data_quality.md · queries/*.csv
 ```
-
----
-
-## 已知限制
-
-1. **外网访问不了** —— 本机在 `10.40.28.209/16` 私有网段，NAT 后面；三国节点实测 TCP 全超时。
-   对外演示要走隧道或云服务器，本地 `localhost:8501` 正常。
-2. **未计算「首要污染物」** —— 表里只有各污染物浓度与 AQI，没有逐日判定谁占主导。
-3. **`o3_24h` 结构性缺失** —— 2024 年 100%、2025 年 86.87%，跨年不可比。
-
-其余 9 条见 [docs/limitations.md](docs/limitations.md)。
 
 ---
 
