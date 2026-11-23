@@ -30,7 +30,7 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from src import config, db, stats  # noqa: E402
+from src import config, db, regions, stats  # noqa: E402
 
 #: 城市进入排名的门槛：至少这么多天的有效 PM2.5 数据
 MIN_DAYS_FOR_RANK = 300
@@ -460,6 +460,7 @@ def sec_correlation(df: pd.DataFrame) -> list[str]:
     lines += markdown_table(["列 A", "列 B", "r", "成对样本 n"], rows)
     lines.append("")
     lines += sec_layered_correlation(df, pairs)
+    lines += sec_regional_correlation(df, pairs)
     return lines
 
 
@@ -544,6 +545,89 @@ def sec_layered_correlation(df: pd.DataFrame, pairs=None) -> list[str]:
         lines.append("")
         lines += [f"- {v}" for v in verdicts]
         lines.append("")
+    return lines
+
+
+def sec_regional_correlation(df: pd.DataFrame, pairs=None) -> list[str]:
+    """第三层：同一个「城市间」关系，分大区再看一遍。
+
+    为什么还要这一层：7.1 已经证明池化系数会被城市间差异污染，但「城市间」
+    本身也可能不是一块铁板 —— 西北的沙尘和华东的工业排放，让 PM2.5 与 PM10
+    的关系完全可能不是同一条线。分大区算，是把「一个全国数」换成「七个数 +
+    一个全国参照」，看结论是普适的还是只是在某些区域成立。
+    """
+    lines = ["### 7.2 分区域相关：同一条关系在全国是不是普遍成立", "",
+             "> 先按城市求多年均值，再在**各区域内**的城市之间算 Pearson r。",
+             "> 用的是「城市间」口径（与 7.1 第三列同一个算法），只是把城市按大区分了组。",
+             "> 大区划分：城市 → 省份由 `cpca` 解析生成、省份 → 大区按七大地理分区人工归类，"
+             "见 `src/regions.py`。", ""]
+    if "city" not in df.columns:
+        return lines + ["> ⚠️ 表中没有 `city` 列，无法做分区域相关。", ""]
+    if pairs is None:
+        pairs = [("pm25_24h", "o3_8h_24h"), ("pm25_24h", "pm10_24h"),
+                 ("pm25_24h", "no2_24h")]
+
+    city_region = {c: regions.region_of(c) for c in df["city"].dropna().unique()}
+    unmapped = sorted([c for c, r in city_region.items() if r is None])
+    if unmapped:
+        lines.append(f"> ⚠️ 有 {len(unmapped)} 座城市查不到大区，未计入本节："
+                     f"{'、'.join(unmapped[:10])}{' 等' if len(unmapped) > 10 else ''}")
+        lines.append("")
+
+    for a, b in pairs:
+        if a not in df.columns or b not in df.columns:
+            lines += [f"> ⚠️ `{a}` × `{b}`：缺列，跳过。", ""]
+            continue
+        sub = df[["city", a, b]].dropna()
+        if len(sub) < 10:
+            lines += [f"> ⚠️ `{a}` × `{b}`：样本不足，跳过。", ""]
+            continue
+
+        cm = sub.groupby("city")[[a, b]].mean().dropna()
+        cm["_region"] = [city_region.get(c) for c in cm.index]
+
+        rows = []
+        # 全国参照
+        r_all = float(cm[a].corr(cm[b]))
+        rows.append(["全国（参照）", f"{len(cm)}", f"{r_all:.4f}", "—"])
+
+        signs: dict[str, float] = {}
+        for region in regions.REGION_ORDER:
+            g = cm[cm["_region"] == region]
+            if len(g) < 5:
+                rows.append([region, f"{len(g)}", "—（城市不足 5）", "—"])
+                continue
+            r = float(g[a].corr(g[b]))
+            signs[region] = r
+            rows.append([region, f"{len(g)}", f"{r:.4f}",
+                         "同一方向" if r * r_all > 0 else "**反向**"])
+
+        lines.append(f"**`{a}` × `{b}`**")
+        lines.append("")
+        lines += markdown_table(["大区", "城市数", "城市间 r", "与全国参照比"], rows)
+        lines.append("")
+
+        # 自动判定：区域间是否一致（方向一致 ≠ 强度一致，两个都要说）
+        if len(signs) >= 2:
+            vals = list(signs.values())
+            spread = max(vals) - min(vals)
+            hi = max(signs, key=signs.get)
+            lo = min(signs, key=signs.get)
+            flipped = sorted([k for k, v in signs.items() if v * r_all < 0])
+            if flipped:
+                lines.append(f"- 有 {len(flipped)} 个大区方向与全国相反：{'、'.join(flipped)} —— "
+                             "这个关系**不普遍**，写结论时必须限定区域。")
+            elif spread > 0.4:
+                lines.append(
+                    f"- 七个大区**方向**都与全国参照一致，但**强度差得多**："
+                    f"{hi} {signs[hi]:.4f}、{lo} {signs[lo]:.4f}（极差 {spread:.4f}）。"
+                    f"所以「{a} 与 {b} 正相关」这句话只在方向上成立，"
+                    "强度不能当成一个全国统一的数来引用。")
+            else:
+                lines.append(f"- 七个大区方向都与全国参照一致，强度也接近（r 极差 {spread:.4f}）—— "
+                             "这个关系在全国范围内是稳的。")
+            lines.append("")
+
     return lines
 
 

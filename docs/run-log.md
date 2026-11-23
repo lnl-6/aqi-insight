@@ -790,6 +790,71 @@ E       assert -45 == 45
 
 ---
 
+## R10 · 2026-11-23 分区域相关 / 站点级全量 / 外网可达性
+
+**为什么这一轮**：R9 结尾列了三条「未验证」——分区域相关缺城市→大区映射表、站点级只跑过 3 个日文件、
+外网访问 8501 只在本机确认过 200。这一轮把这三条各自跑到底。
+
+### 环境
+
+| 项 | 值 |
+|---|---|
+| OS | Windows + WSL2 Ubuntu2204（本轮未用到 WSL） |
+| Python | 3.14.8 |
+| 数据 | `data/processed/aqi_daily.csv.gz` 632,513 行 × 24 列 |
+| 开发期工具 | `cpca`（**只用于生成映射表，不进 requirements**） |
+| Docker | `aqi-app` / `aqi-mysql` 均 healthy |
+
+### 命令与结果
+
+| # | 命令 | 结果 |
+|---|---|---|
+| 1 | 生成脚本调 `cpca.transform(372 个城市名)` | 解析 **355** 条，17 条认不出 → 人工补（见下） |
+| 2 | `python -m pytest tests/test_regions.py -q` | **8 passed** |
+| 3 | `python scripts/make_report.py` | 新增 §7.2，报告 632,513 行 / 24 列 / 372 城 |
+| 4 | `python -m pytest -q` | **107 passed, 1 xfailed in 4.24 s** |
+| 5 | `AQI_DATA_LEVEL=site python -u scripts/prepare_data.py --no-resume --level site --out data\processed\aqi_daily_site.csv.gz` | **3,063,013 行 × 25 列**，1826/1826 个日文件，**1061.9 s（0.58 s/文件）**，产物 127.08 MB |
+| 6 | 站点级数据自检 | 站点 **1843**、城市 **372**、日期 2021-01-01 ~ 2025-12-31、对照表覆盖率 **0.9989** |
+| 7 | `check-host.net` 从瑞士/印度/土耳其三节点 TCP 连 `36.163.151.67:8501` | 三节点全部 **Connection timed out** |
+
+### 实测数字
+
+**分区域相关（§7.2，城市间口径）**：`pm25_24h × o3_8h_24h` 的 r 为
+华北 +0.7699 / 东北 +0.4273 / 华东 +0.6647 / 华中 +0.8362 / 华南 +0.1566 / 西南 +0.0733 / 西北 +0.1745，
+全国 +0.4745。**方向一致，强度极差 0.7629**（10 倍以上）。
+`pm10_24h × o3_8h_24h` 极差 0.8180、`pm25_24h × no2_24h` 极差 0.5426；
+只有 `pm25_24h × pm10_24h` 稳（极差 0.2196）。
+
+**站点级全量**：3,063,013 行是城市级 632,513 行的 **4.84 倍**；25 列比城市级多一列 `station_name`；
+1843 个监测点有 1841 个能在对照表里匹配上，**816 行**的站点编号匹配不到（已标「未知」）。
+
+**外网可达性**：**不可达，且不是代码问题**。证据链：
+1. 本机 WLAN 地址是 **10.40.28.209/16**（RFC1918 私有地址），默认网关 **10.40.0.1** —— 本机在 NAT 后面；
+2. Streamlit 自报的 `External URL: http://36.163.151.67:8501` 是它探测到的**出口地址**，
+   不是本机地址，入站要靠上游网关做端口映射，这不是本机能控制的；
+3. 从三个境外节点做 TCP 连接，全部超时；
+4. 本机也没有针对 8501 的入站防火墙规则（即便有防火墙放行，没有端口映射也照样不通）。
+
+### 失败与修复
+
+| 现象 | 根因 | 处理 |
+|---|---|---|
+| `import cpca` → `ModuleNotFoundError: No module named 'pkg_resources'` | Python 3.14 默认不带 `setuptools` | `pip install "setuptools<82"`；**cpca 仍不进 requirements** |
+| `cpca.transform(..., area_sensitive=False)` → `TypeError` | 装的版本没有这个参数 | 去掉该参数 |
+| 17 个城市名解析不出 | 是简称/市辖区/国家级新区（如 `湘西州`、`吴江`、`雄安新区`） | 写进生成脚本的 `MANUAL_FIX`，**逐条注明依据**；生成的 `src/regions.py` 里也列出这 17 个 |
+| 站点级 `prepare_data.py` 覆盖了 `reports/data_quality.md` | 脚本把质量报告写到固定路径 | 把站点级的另存为 `reports/data_quality_site.md`，城市级的从备份恢复 |
+| 后台任务报 `exit code 1`，但产物正常 | PowerShell 管道包装 python 的 stderr（tqdm 进度条）触发 `NativeCommandError` | 以产物为准：`[done]` 两行齐全、文件 3,063,013 行。**判断成败看产物，不看 shell 退出码** |
+| `Get-Content data_quality.md` 显示成 `# 鏁版嵁璐ㄩ噾鎶ュ憡` | PowerShell 按 GBK 显示 UTF-8 | 用 Python `read_text(encoding='utf-8')` 复核，文件本身没问题（R8 已记过同一个坑，这次又踩了一次） |
+
+### 未验证
+
+- **外网访问 8501**：结论是*这台机器所在的网络*不可达；要对外演示得另想办法
+  （Cloudflare Tunnel / ngrok / 部署到云服务器），本轮没做。
+- 图表像素级渲染（仍是截图目视 + AppHero 断言，没有像素比对）。
+- 站点级数据没有进 MySQL（`load_mysql.py` 目前只吃城市级路径），也没有做站点级的报告与看板。
+
+---
+
 ## 模板（下次运行照这个填）
 
 ```
