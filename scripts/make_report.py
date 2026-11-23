@@ -315,7 +315,7 @@ def sec_city_rank(df: pd.DataFrame, focus: str = "西安",
     if focus and focus in g.index:
         row = g.loc[focus]
         rank = int((g["mean"] > row["mean"]).sum()) + 1
-        lines += [f"### 3.1 {focus}（{last_year} 年）", ""]
+        lines += [f"### 4.1 {focus}（{last_year} 年）", ""]
         lines += markdown_table(
             ["城市", "年均 μg/m³", "全国排名", "参评城市数", "有效天数"],
             [[focus, fmt(row["mean"]), f"{rank}", f"{len(g)}", f"{int(row['days'])}"]])
