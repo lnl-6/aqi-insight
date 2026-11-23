@@ -585,6 +585,38 @@ present_levels = set(df["aqi_level"].dropna().unique())
 
 ---
 
+## 附录 A · 2026-11-23 试过又放弃的路径：WSL 里的原生 MySQL
+
+用户提过「MySQL 应该装在 Ubuntu 上」，我按这条线索查了一遍，结论是**这台机器上没有现成的 Ubuntu MySQL**：
+
+| 查的地方 | 结果 |
+|---|---|
+| WSL `Ubuntu2204`（22.04.5，默认发行版） | `apt-cache policy mysql-server` → `Installed: (none)`；`/usr/sbin/mysqld`、`/var/lib/mysql`、`/etc/mysql` 全部不存在 |
+| WSL 里看到的 `*:3306` 监听 | 是 **Docker 容器的 `aqi-mysql`**，不是系统服务（`docker ps` 可证） |
+| VMware（装在 `D:\vm\`）里的 `node1/node2/node3` | 是 **CentOS 7**，不是 Ubuntu，而且已关机、`192.168.88.x` ping 不通 |
+
+于是我在 WSL 里装了一个原生 MySQL 8.0.46 验证可行性，装成功了（走**阿里云镜像**，
+`archive.ubuntu.com` 从这台机器下载 17.8 MB 的包卡了 25 分钟下不动），
+`mysql -h127.0.0.1 -uroot -proot` 在 WSL 内可连，Windows 侧通过 WSL2 localhostForwarding
+也能连上（`db.ping()` → True），三张表建表成功。
+
+**但用户决定还是用 Docker 容器**，所以：
+
+- `systemctl stop mysql` + `systemctl disable mysql` —— 服务已停、开机不再自启
+- 安装的 6 个 `mysql*` 包**没有卸载**（还占约 200 MB）。要彻底删除：
+  `wsl -d Ubuntu2204 -e bash -c "apt-get purge -y 'mysql-*' && rm -rf /var/lib/mysql /etc/mysql"`
+- `docker compose down` → `docker compose up -d` 恢复 Docker 栈，数据卷没动过：
+  `aqi_daily` 632,513 行、`station` 372 行、暂存表 0 行，可用。
+
+> 顺带把 WSL 的 `/etc/apt/sources.list` 从 `archive.ubuntu.com` 换成了 `mirrors.aliyun.com`
+> （原文件备份在 `/etc/apt/sources.list.orig`）。这个改动与 MySQL 无关，是让 apt 在这台机器上
+> 能用，保留着更好；要还原就 `cp /etc/apt/sources.list.orig /etc/apt/sources.list`。
+
+**下次别再走这条路**：这台机器的 WSL 到 `archive.ubuntu.com` 基本不通，而 Docker 路径
+（`docker compose up -d`，20 秒 healthy）已经完全够用。
+
+---
+
 ## 模板（下次运行照这个填）
 
 ```
