@@ -434,7 +434,9 @@ def main() -> int:
         "# 空气质量数据分析报告（自动生成）",
         "",
         f"- 生成时间：{datetime.now():%Y-%m-%d %H:%M:%S}",
-        f"- 数据源：`{config.DAILY_CSV}`" if not args.from_db else "- 数据源：MySQL `air_quality.daily`",
+        f"- 数据源：`{config.DAILY_CSV}`" if not args.from_db
+        else f"- 数据源：MySQL `{config.DB['database']}.{config.TABLE_DAILY}`"
+             f"（{config.DB['host']}:{config.DB['port']}）",
         f"- 生成命令：`python scripts/make_report.py{'' if not args.from_db else ' --from-db'}`",
         f"- scipy 可用：{'是' if stats.HAS_SCIPY else '否（t 检验 / 卡方 / CI 将缺失）'}",
         "",

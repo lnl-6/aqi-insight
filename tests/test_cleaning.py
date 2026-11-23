@@ -16,7 +16,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.cleaning import daily_aggregate, finalize, to_long
+from src.cleaning import daily_aggregate, finalize, quality_summary, to_long
 from src.config import ID_COLS
 
 
@@ -191,3 +191,33 @@ def test_finalize_city_level_ignores_station_map() -> None:
     mapping = pd.DataFrame({"station": ["1001A"], "city": ["北京市"]})
     out = finalize(daily, mapping, level="city")
     assert out.loc[0, "city"] == "西安市"
+
+
+def test_quality_summary_reads_original_column_names() -> None:
+    """管线内部用的是原始指标名（PM2.5 / O3_8h），要能统计出来。"""
+    df = pd.DataFrame({
+        "PM2.5": [10.0, None, 30.0],
+        "O3_8h": [80.0, 90.0, None],
+    })
+    out = quality_summary(df)
+    assert set(out["指标"]) == {"PM2.5", "O3_8h"}
+    assert out.loc[out["指标"] == "PM2.5", "非空行数"].item() == 2
+
+
+def test_quality_summary_reads_renamed_columns() -> None:
+    """db.load_daily_csv() 读回来的列已经改名为 pm25 / o3_8h，也必须认。
+
+    这条守住 2026-11-14 与 11-23 两次真跑踩到的坑：拿改名后的 DataFrame 调
+    save_quality_report()，整张表被写成「（无数据）」，而文件名和总行数看着
+    都正常，最容易漏检。
+    """
+    df = pd.DataFrame({
+        "pm25": [10.0, None, 30.0],
+        "o3_8h": [80.0, 90.0, None],
+        "pm25_24h": [12.0, 20.0, 28.0],
+    })
+    out = quality_summary(df)
+    assert not out.empty, "改名后的列必须能被统计到，否则报告会写成「（无数据）」"
+    assert "PM2.5" in set(out["指标"])
+    assert out.loc[out["指标"] == "PM2.5", "非空行数"].item() == 2
+    assert out.loc[out["指标"] == "PM2.5_24h", "非空行数"].item() == 3

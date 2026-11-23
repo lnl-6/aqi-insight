@@ -321,8 +321,9 @@ pytest --collect-only -q | tail -1
 
 > ✅ **实测**：2026-11-08 首次运行 —— **50 passed, 1 xfailed，用时 1.14 s**；
 > 2026-11-09 加了幂等导入的 13 个用例后 —— **63 passed, 1 xfailed**；
-> 2026-11-14 加了站点维表推导的 8 个用例后 —— **71 passed, 1 xfailed**（本机耗时 2~4 s，
-> 取决于是否预热过缓存；这是一次实测，不是承诺）。
+> 2026-11-14 加了站点维表推导的 8 个用例后 —— **71 passed, 1 xfailed**；
+> 2026-11-23 加了 `quality_summary` 列名解析的 2 个用例后 —— **73 passed, 1 xfailed**
+> （本机耗时 2~4 s，取决于是否预热过缓存；这是一次实测，不是承诺）。
 > 首跑曾有 2 个用例报红，**两处都是测试自己写错**，不是被测代码的问题：
 > - `test_cleaning.py` 断言 AQI=73 应为「优」——按国标 51–100 是「良」，改断言
 > - `test_zipsource.py` 的列表推导绑定了 `src`（`Path`）而不是 `member`（`str`），类型必然不等，改成先取 `members` 再比较
@@ -343,11 +344,14 @@ pytest --collect-only -q | tail -1
    占主导；「臭氧成为首要污染物」这类结论当前无法从本表直接得出，只能看 O3 超标率
 5. **未做 PM2.5 / O3 的机器学习预测** —— 那是另一个项目的范围
 6. **看板未做用户登录与权限** —— 单机演示用途，公开部署请自行加反向代理与鉴权
-7. **全部路径已于 2026-11-14 实际跑通** —— `prepare_data.py` / `make_report.py` / `pytest`
-   在 2026-11-08 跑通；`docker compose up -d mysql` + `load_mysql.py` + `run_queries.py`
-   + Streamlit 看板在 2026-11-14 跑通（耗时与结果见 `docs/run-log.md` R4）。
-   仍然**没有验证**的是 `Dockerfile` 自己构建镜像（用的是官方 `mysql:8.0` 镜像 +
-   本地 `pip install`，没有 `docker compose build app`）
+7. **全部代码路径已于 2026-11-23 实际跑通** ——
+   - 2026-11-08：`prepare_data.py` / `make_report.py`（读 CSV）/ `pytest`
+   - 2026-11-14：`docker compose up -d mysql` + `load_mysql.py`（幂等两次）+ `run_queries.py` + Streamlit 看板
+   - 2026-11-23：`make_report.py --from-db`（读 MySQL，23 列，与 CSV 版统计数字完全一致）、
+     站点级模式 `AQI_DATA_LEVEL=site`、63 万行大表重建索引、`.env` 覆盖默认配置、
+     `--years` 限年、单条查询 `-q`、以及**干净目录 clone 之后的完整走查**
+   仍然**没有验证**的只有一项：`docker compose build app` 自己构建镜像
+   （本机到 Docker Hub 直连超时，走镜像加速器拉 `python:3.11-slim` 极慢，见 `docs/run-log.md` R7）
 8. **`O3_24h` 只有 60.4% 非空** —— 该指标在部分城市/年份未上报，涉及它时不能直接当完整样本用
 9. **幂等导入已验证** —— 2026-11-14 连跑两次 `load_mysql.py`，两次之后 `aqi_daily`
    都是 **632,513 行 / 372 个 station / 暂存表 0 行**，行数与第一次完全一致
@@ -371,14 +375,20 @@ pytest --collect-only -q | tail -1
 | 280.9 s（0.15 s/日文件） | **运行时实测（2026-11-08）** | `docs/run-log.md` |
 | 50 passed / 1 xfailed | **运行时实测（2026-11-08）** | `docs/run-log.md` |
 | 63 passed / 1 xfailed | **运行时实测（2026-11-09）** | `docs/run-log.md` R2 |
-| 71 passed / 1 xfailed | **运行时实测（2026-11-14）** | `docs/run-log.md` R4 |
-| 导入 632,513 行 / 562.3 s / 1,125 行每秒 | **运行时实测（2026-11-14，真 MySQL 8.0）** | `docs/run-log.md` R4 |
-| 幂等：连导两次仍 632,513 行 | **运行时实测（2026-11-14）** | `docs/run-log.md` R4 |
+| 71 passed / 1 xfailed | **运行时实测（2026-11-14）** | `docs/run-log.md` R5 |
+| 导入 632,513 行 / 562.3 s / 1,125 行每秒 | **运行时实测（2026-11-14，真 MySQL 8.0）** | `docs/run-log.md` R5 |
+| 幂等：连导两次仍 632,513 行 | **运行时实测（2026-11-14）** | `docs/run-log.md` R5 |
 | 5 条 SQL 查询 7.9 s 跑完 | **运行时实测（2026-11-14）** | `reports/queries/*.csv` |
 | 全国 31.63 → 29.87（−5.6%） | **运行时实测** | `reports/report.md` §2、§7 |
 | t=−6.90, p=2.5e-11 / χ²=1431.4 | **运行时实测** | `reports/report.md` §6.1、§6.2 |
 | r(PM2.5,PM10)=0.77；r(PM2.5,O3)=−0.04 | **运行时实测** | `reports/report.md` §5 |
 | 西安 41.99，第 22/339 | **运行时实测** | `reports/report.md` §3.1 |
+| 73 passed / 1 xfailed | **运行时实测（2026-11-23）** | `docs/run-log.md` R7 |
+| `--from-db` 27.1 s，读 MySQL 得 632,513 行 × 23 列 | **运行时实测（2026-11-23）** | `docs/run-log.md` R7 |
+| 站点级 3 个日文件 → 5,297 行 × 25 列，1,802 站点，覆盖率 0.9989 | **运行时实测（2026-11-23，首次）** | `docs/run-log.md` R7 |
+| 63 万行表重建 3 个索引 7.26 s（2.81 / 1.82 / 2.63 s） | **运行时实测（2026-11-23）** | `docs/run-log.md` R7 |
+| 干净 clone 后 `--limit 3` → 1,109 行 × 24 列 / 0.8 s | **运行时实测（2026-11-23）** | `docs/run-log.md` R7 |
+| 看板冷启动 4.28 s、单次筛选 0.58 s（parquet 缓存命中） | **运行时实测（2026-11-23）** | `docs/run-log.md` R7 |
 
 > 这张表的作用：**任何人问「这个数字哪来的」，答案必须落在某一行的右列**。
 > 落在「我算过」「大概」上的，就是编的。

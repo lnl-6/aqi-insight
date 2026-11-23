@@ -228,15 +228,28 @@ def finalize(
 
 
 def quality_summary(df: pd.DataFrame) -> pd.DataFrame:
-    """按列统计非空率与分布，输出可直接写进 reports/data_quality.md 的表。"""
+    """按列统计非空率与分布，输出可直接写进 reports/data_quality.md 的表。
+
+    注意：``POLLUTANT_TYPES`` 用的是原始指标名（``PM2.5``、``O3_8h``），而
+    ``db.load_daily_csv()`` 读进来时已经按 ``COLUMN_RENAMES`` 改成了
+    ``pm25``、``o3_8h`` 这类蛇形名。这里两种写法都要认，否则拿着改名后的
+    DataFrame 调用本函数会得到一张空表——2026-11-14 和 11-23 各踩过一次。
+    """
     if df.empty:
         return pd.DataFrame()
 
-    value_cols = [c for c in POLLUTANT_TYPES if c in df.columns]
+    def _resolve(name: str) -> str | None:
+        """原始名在就用原始名，否则退回蛇形名，都没有就返回 None。"""
+        if name in df.columns:
+            return name
+        snake = name.lower().replace(".", "")
+        return snake if snake in df.columns else None
+
+    value_cols = [c for c in POLLUTANT_TYPES if _resolve(c) is not None]
     rows = []
     total = len(df)
     for col in value_cols:
-        s = df[col]
+        s = df[_resolve(col)]
         rows.append({
             "指标": col,
             "非空行数": int(s.notna().sum()),

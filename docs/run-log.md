@@ -295,7 +295,7 @@ python scripts/make_report.py
 
 ---
 
-## R4 · 2026-11-14 第一次真正跑通 MySQL / SQL 查询 / 看板
+## R5 · 2026-11-14 第一次真正跑通 MySQL / SQL 查询 / 看板
 
 之前 R1–R3 里最要紧的那句「MySQL、查询、看板一次都没跑」在这一轮被推翻了。
 所有数字都是真的跑出来的。
@@ -391,7 +391,7 @@ assert not at.exception
 
 ---
 
-## R5 · 2026-11-14 修「点一下筛选就卡住」
+## R6 · 2026-11-14 修「点一下筛选就卡住」
 
 ### 现象
 
@@ -483,9 +483,105 @@ present_levels = set(df["aqi_level"].dropna().unique())
 | 3 | `AppTest` 连续 4 次改筛选 | 0.18 / 0.19 / 0.51 / 0.36 s，异常 0 |
 | 4 | 重启看板 + `/_stcore/health` | 200 ok |
 
-### 未验证（与 R4 相同）
+### 未验证（与 R5 相同）
 
 `docker compose build app`、`pip install -r requirements.txt` 全量、图表像素级渲染。
+
+---
+
+## R7 · 2026-11-23 把剩余部署项全部补完（含 Docker 整栈）
+
+### 为什么有这一轮
+
+用户说「MySQL 我在本地已经安装好了」。核查后发现**本机没有 MySQL 服务端**，
+只有 **DBeaver 26.2.4**（图形客户端）：3306 无监听、无 mysql/maria 服务、注册表里只有 DBeaver、
+`C:\Program Files\MySQL` 等常见路径全不存在、`mysqld.exe` 在 C:\ 与 D:\ 深度 5 层扫描未找到。
+所以可行路径仍是 Docker（11-14 已验证过）。
+
+### 环境
+
+| 项 | 实测值 |
+|---|---|
+| Docker Desktop | `ServerVersion 29.9.2`（需手动 `Start-Process` 启动引擎） |
+| 容器 | `aqi-mysql` mysql:8.0 healthy；卷 `aqi-insight_mysql_data` |
+| 库里数据 | `aqi_daily` 632,513 行 / `station` 372 行 / `aqi_daily_stg` 0 行 |
+| Python | 3.14.8（宿主机）/ 3.11-slim（容器） |
+
+### 命令与结果
+
+| # | 命令 | 结果 | 耗时 |
+|---|---|---|---|
+| 1 | `python -m pip install -r requirements.txt` | 退出码 0，全部已满足 | — |
+| 2 | `python scripts/make_report.py --from-db` | **632,513 行 / 23 列 / 372 城** | 40.4 s → 修完 27.1 s |
+| 3 | `AQI_DATA_LEVEL=site python scripts/prepare_data.py --limit 3` | **5,297 行 × 25 列**，1,802 站点，覆盖率 **0.9989** | 2.7 s |
+| 4 | 63 万行表重建 3 个索引 | `idx_city_date` 2.81 s / `idx_date` 1.82 s / `idx_level` 2.63 s | **7.26 s** |
+| 5 | `.env` 写 `MYSQL_PORT=3307` | `config.DB['port']` 读到 3307（说明 dotenv 生效） | — |
+| 6 | `--years 2025 --limit 10` | **3,420 行 × 23 列**（列数变少见下） | 2.0 s |
+| 7 | `run_queries.py -q exceed_days --show` | 339 行 | 3.43 s |
+| 8 | 干净目录 `git clone` 后按 README 走 | `71 passed`；`--limit 3` → 1,109 行 × 24 列；`make_report` 正常 | — |
+| 9 | `docker compose build --build-arg PIP_INDEX_URL=<清华源> app` | **镜像构建成功** `aqi-insight-app:latest` | **300.1 s** |
+| 10 | `docker compose up -d` | `aqi-mysql` + `aqi-app` 均 **healthy** | 1.7 s |
+| 11 | 宿主机 `http://127.0.0.1:8501/_stcore/health` | **HTTP 200 / body=ok**；首页 200 | — |
+| 12 | 容器内连数据库（服务名 `mysql`） | `ping True`、`632,513 行` | — |
+
+### 这一轮抓到的三个真问题
+
+**1. `scripts/make_report.py` 里写死的假表名**
+
+原代码把数据源写死成 `MySQL \`air_quality.daily\``，而实际库是 `aqi`、表是 `aqi_daily`。
+报告读的是真库，写出来的却是另一个名字——属于「文档骗人」的一类错误。
+改成 `f"MySQL \`{config.DB['database']}.{config.TABLE_DAILY}\`（{config.DB['host']}:{config.DB['port']}）"`，
+现在输出 `MySQL \`aqi.aqi_daily\`（127.0.0.1:3306）`。
+
+**2. `quality_summary()` 认不出改名后的列（第二次踩同一个坑）**
+
+`src/cleaning.py` 的 `quality_summary()` 用 `POLLUTANT_TYPES` 里的原始指标名
+（`PM2.5`、`O3_8h` …）去 `df.columns` 里找，但 `db.load_daily_csv()` 会按 `COLUMN_RENAMES`
+把列改成 `pm25`、`o3_8h`。于是「从库里读出来再生成质量报告」这条路会产出**空表**，
+而且文件名、总行数都正常，只有中间那张指标表是「（无数据）」——11-14 那次我误判成
+「手工重建的副作用」，这次跑站点级模式才抓到真因。
+修法：`_resolve(name)` —— 原名在就用原名，否则退回 `name.lower().replace(".", "")` 的蛇形名。
+补了 2 个回归测试：原名版 + 改名版各一条，断言 `not out.empty` 且非空行数正确。
+
+**3. 容器里 pandas/numpy 装到了比本机更新的版本**
+
+`requirements.txt` 全是 `>=` 没有上界，容器解析出 **pandas 3.1.1 / numpy 2.4.6**，
+而本机是 **3.0.3 / 2.4.4**。构建没问题，但这意味着「本机跑通」不等于「容器里跑的是同一套版本」。
+**建议**（未做，需用户点头）：把 `requirements.txt` 钉成 `==` 的实测版本，或另存一份 `requirements.lock`。
+
+### 踩的坑
+
+- **Docker 拉不到基础镜像**：直连 `registry-1.docker.io` 超时；`~/.docker/daemon.json` 里配的
+  `docker.1ms.run` 连接被强制中断。改用 `docker.1panel.live/library/python:3.11-slim` 显式拉取成功
+  （189 MB），再 `docker tag` 成 `python:3.11-slim` 让 `FROM` 命中本地。
+- **容器内 pip 只有 39.7 kB/s**：直连 PyPI 时 12.4 MB 的 pandas 轮子下了 **290 s**。
+  给 `Dockerfile` 加 `ARG PIP_INDEX_URL=https://pypi.org/simple` + `ENV PIP_INDEX_URL=${PIP_INDEX_URL}`，
+  用 `--build-arg` 换成清华源后 **864 kB/s**，整次构建 300 s 完成。默认值仍是官方源，不影响别人。
+- **`prepare_data.py` 会覆盖 `reports/data_quality.md`**：每次拿它当探针（`--limit`/`--years`）都会
+  把全量质量报告冲掉。本轮冲了两次，都用 `save_quality_report(db.load_daily_csv())` 重建
+  （后来发现这个重建本身也受问题 2 影响，所以重建后又用修复版跑了一遍）。
+- **`Invoke-WebRequest` 报「Windows PowerShell 处于非交互模式」**：是 IE 引擎在非交互环境下的提示，
+  加 `-UseBasicParsing` 即可。
+
+### 本轮确认的事
+
+- ✅ `Dockerfile` 能真的构建出镜像——此前那行 `COPY tests/ ./tests/ 2>/dev/null || true` 的修复
+  **只在纸面上改过，这次才算验证**（`COPY` 是指令不是 shell）。
+- ✅ 容器之间用服务名 `mysql` 能连通（不是 `127.0.0.1`）。
+- ✅ 干净 clone 能按 README 跑通，不存在「只有我这台机器才成立」的隐藏依赖。
+- ✅ `--from-db` 与读 CSV 两条路的**统计数字完全一致**，只差数据源行、命令行、列数（23 vs 24，DB 无 `city_is_valid`）。
+- ✅ 站点级模式（此前一次都没跑过）能出数据，站点列表覆盖率 0.9989，6 行找不到编号被标「未知」。
+
+### 未验证（剩下的很少了）
+
+| 目标 | 原因 |
+|---|---|
+| 从**外网**真的访问 8501 | Streamlit 自报 External URL `http://36.163.151.67:8501`，但能否从公网连上取决于路由器端口映射/防火墙，**没有从外部验证** |
+| 图表像素级渲染效果 | 只看过 AppTest 无异常，没做截图比对 |
+| 站点级全量跑一遍 | 只跑了 3 个日文件 |
+
+> 一个安全提醒：容器把 8501 映射到 `0.0.0.0`。如果这台机器的公网 IP 真能直连，
+> 任何知道地址的人都能打开看板（没有鉴权）。演示完建议 `docker compose down`。
 
 ---
 
