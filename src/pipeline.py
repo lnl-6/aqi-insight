@@ -36,15 +36,6 @@ except ImportError:  # pragma: no cover
     tqdm = None  # type: ignore[assignment]
 
 
-def _date_from_filename(path: Path) -> str | None:
-    """从 china_cities_20240101.csv 里取出 20240101。"""
-    stem = path.stem  # china_cities_20240101
-    parts = stem.split("_")
-    if parts and len(parts[-1]) == 8 and parts[-1].isdigit():
-        return parts[-1]
-    return None
-
-
 def _day_of(source: tuple[Path, str]) -> str | None:
     """`(数据源, 包内成员)` → 20240101。"""
     src, member = source

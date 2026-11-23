@@ -36,8 +36,3 @@ def read_csv_smart(path: str | Path, **kwargs) -> pd.DataFrame:
     raise ValueError(
         f"{path.name} 无法用以下任一编码读取：{ENCODINGS}（最后错误：{last_err}）"
     )
-
-
-def read_head(path: str | Path, n: int = 5) -> pd.DataFrame:
-    """只读前 n 行，用于快速窥探结构（不改动原文件）。"""
-    return read_csv_smart(path, nrows=n)

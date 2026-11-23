@@ -1,14 +1,13 @@
 # 核心
 pandas>=2.0
 numpy>=1.24
-# 可视化
-matplotlib>=3.7
 # 统计检验
 scipy>=1.10
 # 数据库
 sqlalchemy>=2.0
 pymysql>=1.1
-# 看板
+# 看板（图表用 pyecharts，不再依赖 matplotlib：
+# matplotlib 从 2026-11-08 那版报告之后就没人 import 了，2026-11-23 删掉）
 streamlit>=1.30
 pyecharts>=2.0
 streamlit-echarts>=0.4

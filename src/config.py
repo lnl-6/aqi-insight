@@ -53,9 +53,6 @@ EXCLUDE_MARKERS = ("_旧的有问题", "旧的有问题")
 #: 用户在网盘包里习惯整体放进来的顶层目录名，仅用于报错时提示
 SUGGESTED_DIR = "全国空气质量"
 
-#: 兼容旧调用：单文件模式下的日 CSV 命名
-RAW_GLOB = "china_sites_*.csv"
-
 DATA_DIR = ROOT / "data"
 INTERIM_DIR = DATA_DIR / "interim"
 PROCESSED_DIR = DATA_DIR / "processed"
@@ -209,17 +206,6 @@ DAILY_MAX_TYPES = {
     "O3_8h_24h",  # 日最大 8 小时滑动平均
 }
 
-#: 参与 IAQI 计算的六项污染物（名称 → 用于计算的列）
-IAQI_MAP = {
-    "PM2.5": "PM2.5_24h",
-    "PM10": "PM10_24h",
-    "SO2": "SO2_24h",
-    "NO2": "NO2_24h",
-    "CO": "CO_24h",
-    "O3": "O3_8h_24h",
-}
-
-
 def agg_rule(type_name: str) -> str:
     """返回某个指标在「日级聚合」时应该用的函数名。
 
@@ -236,20 +222,13 @@ def agg_rule(type_name: str) -> str:
 
 # ---------------------------------------------------------------- 标准
 
-#: GB 3095-2012 二级浓度限值
-#: 颗粒物/SO2/NO2/O3 单位 μg/m³；CO 单位 mg/m³（注意单位不一致，是常见坑）
-GB3095_L2 = {
-    "PM2.5": {"24h": 75, "年": 35},
-    "PM10": {"24h": 150, "年": 70},
-    "SO2": {"24h": 150, "年": 60},
-    "NO2": {"24h": 80, "年": 40},
-    "CO": {"24h": 4, "年": None},      # mg/m³
-    "O3": {"8h": 160, "1h": 200},      # 8h = 日最大 8 小时平均
-}
-
-#: AQI 等级划分**只有一处定义**：`src/aqi.py` 的 `AQI_LEVELS`。
-#: 这里曾经复制过一份，两处迟早会漂移（改了一处另一处不动），已删除。
-#: 需要等级列表请 `from .aqi import AQI_LEVELS`。
+#: 国标常量**不在本文件定义**，各自只有一处真源：
+#:   - AQI 等级划分 → `src/aqi.py` 的 `AQI_LEVELS`
+#:   - IAQI 档位与各污染物浓度断点 → `src/aqi.py` 的 `IAQI_BREAKPOINTS` / `CONC_BREAKPOINTS`
+#:   - 各污染物 24 小时限值（超标率判定用）→ `scripts/make_report.py` 的 `LIMITS_24H`
+#: 这里曾经抄过一份 `GB3095_L2` 和一份 `IAQI_MAP`，两处都没人引用；
+#: 留着只会让它和真源悄悄漂移（AQI_LEVELS 的重复已经踩过一次），已删除。
+#: 需要引用请直接 `from .aqi import ...`。
 
 # ---------------------------------------------------------------- 数据库
 

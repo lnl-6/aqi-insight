@@ -47,6 +47,33 @@ date,hour,type,北京,天津,石家庄,……（后面还有 372 个城市列）
 
 ---
 
+## 看板预览
+
+Streamlit 看板（数据源 MySQL，跑在 Docker 里）。三张截图分别回答三个问题，数值都是页面实时算的，不是写死的文案。
+
+**① 这堆数据有多大**
+
+![看板总览](images/dashboard-overview.png)
+
+632,513 条城市-日记录、372 座城市、1,826 天、平均 AQI 83.0。
+
+**② 谁最差、差到什么程度**
+
+![城市排名与等级占比](images/dashboard-charts.png)
+
+左图只取最差的 20 个城市（默认 PM2.5 24 小时均值，可切污染物）；右图是 AQI 六级分布，
+配色用 HJ 633-2012 的国标色。和田地区 98.83 μg/m³，全国年均最高。
+
+**③ 什么时候差、和什么相关**
+
+![逐月走势与相关性](images/dashboard-correlation.png)
+
+上图是 60 个月的逐月均值（季节性明显）；下图是污染物相关系数热力图。
+最高相关 PM2.5·24h–PM10·24h **r=0.77**（同源），最低 O₃·8h·24h–CO·24h **r=−0.13**。
+O₃ 与 PM2.5 的 r 只有 **−0.04** —— 「颗粒物降了、臭氧升了」这个流行说法在这份数据上不成立。
+
+---
+
 ## 2. 数据来源与规模
 
 - **来源**：全国城市空气质量历史数据 <https://quotsoft.net/air/>
@@ -103,6 +130,7 @@ aqi-insight/
 │   ├── 02_index.sql    建索引 + EXPLAIN 验证
 │   └── queries.sql     5 条窗口函数分析查询
 ├── app/app.py          Streamlit + Pyecharts 看板
+├── images/             看板截图（README「看板预览」用）
 ├── tests/              pytest 用例（含一个故意失败的练习用例）
 ├── Dockerfile
 └── docker-compose.yml  MySQL + 应用一键起

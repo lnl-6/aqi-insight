@@ -82,14 +82,16 @@ POLLUTANT_LABELS: dict[str, str] = {
 }
 
 #: 轴标签、图例、表格里用短名，卡片标题里用长名
+#: 注意：短名必须**两两不同**。之前 pm25 和 pm25_24h 都叫 "PM2.5"，
+#: 热力图轴上就出现两行两列同名，读者会以为是在跟自己做相关（r=1）。
 SHORT_LABELS: dict[str, str] = {
     "aqi": "AQI",
-    "pm25": "PM2.5", "pm25_24h": "PM2.5",
-    "pm10": "PM10", "pm10_24h": "PM10",
-    "so2": "SO₂", "so2_24h": "SO₂",
-    "no2": "NO₂", "no2_24h": "NO₂",
-    "o3": "O₃", "o3_24h": "O₃", "o3_8h": "O₃-8h", "o3_8h_24h": "O₃-8h",
-    "co": "CO", "co_24h": "CO",
+    "pm25": "PM2.5", "pm25_24h": "PM2.5·24h",
+    "pm10": "PM10", "pm10_24h": "PM10·24h",
+    "so2": "SO₂", "so2_24h": "SO₂·24h",
+    "no2": "NO₂", "no2_24h": "NO₂·24h",
+    "o3": "O₃", "o3_24h": "O₃·24h", "o3_8h": "O₃·8h", "o3_8h_24h": "O₃·8h·24h",
+    "co": "CO", "co_24h": "CO·24h",
 }
 
 #: 国标 AQI 六级的官方配色（HJ 633-2012），稍作加深以便在白底上看清
@@ -413,7 +415,7 @@ with left:
             items = list(zip(city_mean.index.tolist(), city_mean.round(2).tolist()))
             items.reverse()  # 横向柱状图从下往上画，反转后最大值在最上面
             chart = (
-                Bar(init_opts=opts.InitOpts(width="100%", height="420px"))
+                Bar(init_opts=opts.InitOpts(width="100%", height="560px"))
                 .add_xaxis([i[0] for i in items])
                 .add_yaxis(f"{zh(pollutant, short=True)}{pollutant_unit(pollutant)}",
                            [i[1] for i in items],
@@ -423,7 +425,12 @@ with left:
                     title_opts=opts.TitleOpts(
                         title=f"浓度最高的 20 个城市（{zh(pollutant)}）", subtitle="单位：μg/m³" if pollutant_unit(pollutant) else ""),
                     xaxis_opts=opts.AxisOpts(name=f"{zh(pollutant, short=True)}{pollutant_unit(pollutant)}"),
-                    yaxis_opts=opts.AxisOpts(type_="category"),
+                    # interval=0 强制显示全部 20 个城市名：默认会自动隔一个隐藏，
+                    # 一旦隐藏就和柱子错位，看起来像"喀什地区 98.83"（实际 98.83 是和田地区）
+                    yaxis_opts=opts.AxisOpts(
+                        type_="category",
+                        axislabel_opts=opts.LabelOpts(interval=0, font_size=11),
+                    ),
                     legend_opts=opts.LegendOpts(is_show=False),
                 )
             )
@@ -446,11 +453,13 @@ with right:
                 .add(
                     series_name="等级占比",
                     data_pair=[(str(k), int(level_count[k])) for k in ordered],
-                    radius=["38%", "66%"],
+                    radius=["36%", "62%"],
+                    center=["50%", "56%"],   # 往下挪一点，给标题和顶部的小扇区标签留位置
                 )
                 .set_colors([AQI_LEVEL_COLORS[k] for k in ordered])
                 .set_global_opts(
-                    title_opts=opts.TitleOpts(title="空气质量等级分布", subtitle="环形内圈为占比"),
+                    # 原来有个副标题"环形内圈为占比"，会和"严重污染 2.02%"的标签叠在一起
+                    title_opts=opts.TitleOpts(title="空气质量等级分布"),
                     legend_opts=opts.LegendOpts(pos_bottom="0%"),
                 )
                 .set_series_opts(
@@ -476,6 +485,8 @@ if "month" in view and pollutant in view:
                 f"{zh(pollutant, short=True)} 月均",
                 trend.round(2).tolist(),
                 is_smooth=True,
+                # 60 个点全标数字会糊成一片（截图里就是），只在最高/最低处标
+                label_opts=opts.LabelOpts(is_show=False),
                 markpoint_opts=opts.MarkPointOpts(
                     data=[opts.MarkPointItem(type_="max", name="最高"),
                           opts.MarkPointItem(type_="min", name="最低")]
@@ -503,7 +514,13 @@ st.divider()
 # ---- 图 4：污染物相关性热力图
 st.subheader("污染物相关性 · 皮尔逊系数")
 st.caption("蓝色表示负相关、红色表示正相关，白色表示几乎无关。相关不等于因果。")
-corr_cols = [c for c in numeric_cols if view[c].notna().sum() > 10][:10]
+# 只取「日级口径」的列：同一污染物的小时值和 24 小时均值天生高度相关（r≈0.98），
+# 两个都放进来占位，还会让"最高相关"永远落在自己身上，信息量为零。
+# 顺序即展示顺序，AQI 放第一位（它是六项的综合）。
+CORR_PREFERRED = ["aqi", "pm25_24h", "pm10_24h", "so2_24h", "no2_24h", "o3_8h_24h", "co_24h"]
+corr_cols = [c for c in CORR_PREFERRED if c in view.columns and view[c].notna().sum() > 10]
+if len(corr_cols) < 3:  # 数据里没有这套列时退回原来的取法
+    corr_cols = [c for c in numeric_cols if view[c].notna().sum() > 10][:10]
 if len(corr_cols) >= 3:
     corr = view[corr_cols].corr().round(2)
     if HAS_PYECHARTS:

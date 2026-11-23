@@ -84,24 +84,6 @@ def paired_ttest(before, after) -> dict:
     }
 
 
-def independent_ttest(group1, group2, equal_var: bool = False) -> dict:
-    """独立样本 t 检验（默认 Welch，不假设方差齐）。"""
-    _require_scipy()
-    a, b = _clean(group1, group2)
-    if len(a) < 2 or len(b) < 2:
-        return _empty_result(len(a))
-    res = _sp.ttest_ind(b, a, equal_var=equal_var)
-    return {
-        "n": int(len(a)),
-        "t": float(res.statistic),
-        "p": float(res.pvalue),
-        "mean_before": float(a.mean()),
-        "mean_after": float(b.mean()),
-        "diff": float(b.mean() - a.mean()),
-        "significant": bool(res.pvalue < ALPHA),
-    }
-
-
 def chi2_test(table: pd.DataFrame) -> dict:
     """卡方独立性检验：行=分组（年份），列=类别（AQI 等级）。
 
@@ -132,18 +114,3 @@ def mean_ci(series, conf: float = 0.95) -> dict:
     half = float(_sp.t.ppf((1 + conf) / 2, n - 1)) * se
     mean = float(s.mean())
     return {"n": n, "mean": mean, "lo": mean - half, "hi": mean + half}
-
-
-def describe(series) -> dict:
-    """不需要 scipy 的基础描述统计（报告里画表格用）。"""
-    s = pd.Series(series).dropna().astype(float)
-    if s.empty:
-        return {"n": 0, "mean": None, "median": None, "std": None, "min": None, "max": None}
-    return {
-        "n": int(len(s)),
-        "mean": float(s.mean()),
-        "median": float(s.median()),
-        "std": float(s.std(ddof=1)) if len(s) > 1 else None,
-        "min": float(s.min()),
-        "max": float(s.max()),
-    }

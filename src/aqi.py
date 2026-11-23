@@ -15,7 +15,6 @@
 from __future__ import annotations
 
 import math
-from typing import Iterable
 
 import pandas as pd
 
@@ -30,7 +29,6 @@ AQI_LEVELS: tuple[tuple[int, int, str, str], ...] = (
 )
 
 AQI_NAMES: tuple[str, ...] = tuple(x[2] for x in AQI_LEVELS)
-AQI_CODES: tuple[str, ...] = tuple(x[3] for x in AQI_LEVELS)
 
 #: 计算等级用的分箱上界（不含 0，靠 include_lowest 兜住）
 _LEVEL_BINS = [0, 50, 100, 150, 200, 300, math.inf]
@@ -156,8 +154,3 @@ def aqi_level_series(aqi: pd.Series) -> pd.Series:
         right=True,
         include_lowest=True,
     )
-
-
-def iter_levels() -> Iterable[tuple[int, int, str, str]]:
-    """遍历等级定义（给文档和看板配色用）。"""
-    return iter(AQI_LEVELS)

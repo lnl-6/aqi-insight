@@ -585,6 +585,98 @@ present_levels = set(df["aqi_level"].dropna().unique())
 
 ---
 
+## R8 · 2026-11-23 清死代码 + 修看板可读性 + 出三张截图
+
+### 为什么有这一轮
+
+用户要「看板截图 3 张放进 README，检查代码没有冗余后上传」。截图前先得让图能看，
+所以顺序是：扫冗余 → 修图 → 截图 → 写 README → 推仓库。
+
+### 死代码扫描怎么做的
+
+写了个一次性脚本（`%TEMP%\deadcode_scan.py`），两步：
+
+1. 用 `ast` 解析每个 `.py`，收集 `import` 的绑定名与文件里实际出现过的名字，差集就是未使用导入；
+2. 把所有模块级 `def`/`class`/`常量赋值` 的名字丢进全仓文本搜索，只出现 1 次（就是定义处）的即为无人引用。
+
+### 删掉的 9 处
+
+| 文件 | 删掉的东西 | 为什么是死的 |
+|---|---|---|
+| `src/aqi.py` | `AQI_CODES` | 全仓 0 引用 |
+| `src/aqi.py` | `iter_levels()` | 全仓 0 引用 |
+| `src/aqi.py` | `from typing import Iterable` | 唯一使用处是 `iter_levels` |
+| `src/config.py` | `RAW_GLOB` | 全仓 0 引用 |
+| `src/config.py` | `IAQI_MAP` | 与 `src/aqi.py` 的 `IAQI_BREAKPOINTS` 重复，且无人用 |
+| `src/config.py` | `GB3095_L2` | 全仓 0 引用（真源见下方注） |
+| `src/io_utils.py` | `read_head()` | 全仓 0 引用 |
+| `src/pipeline.py` | `_date_from_filename()` | 与 `config.day_from_name` + `_day_of` 重复，无人用 |
+| `src/stats.py` | `independent_ttest()`、`describe()` | 报告只用配对 t 检验与卡方，这两个无人调用 |
+
+删 `GB3095_L2` 时在 `src/config.py` 原地留了一段注释，指明三个真源：
+`src/aqi.py` 的 `AQI_LEVELS`（等级阈值）、`src/aqi.py` 的 `IAQI_BREAKPOINTS`/`CONC_BREAKPOINTS`（IAQI 断点）、
+`scripts/make_report.py` 的 `LIMITS_24H`（超标判定用限值）。删之前这里是**第四份**重复的国标数字。
+
+顺带把 `requirements.txt` 里的 `matplotlib>=3.7` 删了 —— 从 2026-11-08 那版报告之后就没有任何文件 import 它，
+图表全部走 pyecharts。（`>=` 无上界的问题**没动**，钉 `==` 需要用户拍板。）
+
+### 改完的验证
+
+```
+python -m compileall -q app src scripts tests conftest.py   # 退出码 0
+python -m pytest -q                                          # 73 passed, 1 xfailed in 1.31s
+```
+
+### 看板可读性修复（为了截图能看）
+
+| 问题 | 改法 |
+|---|---|
+| 热力图轴上出现两个 "PM2.5"（`pm25` 与 `pm25_24h`），`r=1` 像「跟自己相关」 | `SHORT_LABELS` 全部唯一化：`PM2.5·24h` / `PM10·24h` / `SO₂·24h` / `NO₂·24h` / `O₃·24h` / `O₃·8h` / `O₃·8h·24h` / `CO·24h` |
+| 柱状图 y 轴标签默认隔一个隐藏，一隐藏就和柱子错位（截图里出现过「喀什地区 98.83」，而 98.83 是和田的值） | `axislabel_opts=opts.LabelOpts(interval=0, font_size=11)`，并把图高 `420px → 560px` |
+| 折线图 60 个点全标数字，糊成一片 | `label_opts=opts.LabelOpts(is_show=False)`，只留最高/最低的 `MarkPoint` |
+| 相关性矩阵 10 列里同一污染物的小时值和 24h 均值都在，天然 r≈0.98，白占格子 | 新增 `CORR_PREFERRED`，优先取 7 个代表性指标 |
+| 饼图副标题「环形内圈为占比」压住「严重污染 2.02%」标签 | 删副标题，半径 `["36%","62%"]`，中心下移到 `["50%","56%"]` |
+
+### 截图怎么拍的
+
+Playwright 驱动本机 Edge（`channel="msedge"`，不额外下浏览器），viewport 临时拉到 `1440×2700`
+一次渲染完整页，`device_scale_factor=2` 再 `clip` 三段，最后 Pillow 缩回 1440 宽。
+
+**两个坑：**
+
+1. Streamlit 的滚动容器是 `MAIN[data-testid="stMain"]`（`overflow:auto`），不是 `stAppViewContainer`。
+   用错的话 `scrollHeight` 永远等于视口高，滚不动，三张图拍出来一模一样。
+2. 侧边栏是 `x 0..300` 的一整**列**（同高 2700），任何纵向裁剪都会把它切成半截。
+   试过一次，截图顶部留着半截下拉框；最终只框主内容列 `x 350..1390`。
+
+产出：`images/dashboard-overview.png`（1440×595）、`images/dashboard-charts.png`（1440×858）、
+`images/dashboard-correlation.png`（1440×1943），三张都进了 README 的「看板预览」一节。
+
+### 命令与结果
+
+```
+docker compose build --build-arg PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple app
+# → Image aqi-insight-app Built（首次构建在直连 PyPI 时 pip 退出码 2，换源后一次过）
+docker compose up -d
+# → aqi-app Up (healthy) 0.0.0.0:8501->8501/tcp；aqi-mysql Up (healthy) 0.0.0.0:3306->3306/tcp
+Invoke-WebRequest http://127.0.0.1:8501/_stcore/health -UseBasicParsing
+# → HTTP 200 / ok
+```
+
+> PowerShell 读 UTF-8 文件用 `Get-Content` 会显示成乱码（它按 GBK 解释），
+> 排查 `requirements.txt` 是否被写坏时要用 `python -c "pathlib.Path(...).read_text(encoding='utf-8')"` 复核 ——
+> 本轮就先被这个显示问题误导过一次，以为文件编码坏了，其实是终端显示的问题。
+
+### 未验证
+
+| 目标 | 原因 |
+|---|---|
+| 从外网真能访问 8501 | 同 R7，没有从外部验证 |
+| 图表在别的浏览器/移动端的渲染 | 只在本机 Edge 1440 宽下看过 |
+| 站点级全量 | 仍只跑过 3 个日文件 |
+
+---
+
 ## 附录 A · 2026-11-23 试过又放弃的路径：WSL 里的原生 MySQL
 
 用户提过「MySQL 应该装在 Ubuntu 上」，我按这条线索查了一遍，结论是**这台机器上没有现成的 Ubuntu MySQL**：
