@@ -947,6 +947,77 @@ E       assert -45 == 45
 
 ---
 
+## R12 · 2026-11-24 让「clone 下来就能跑」：样本数据 / 构建参数 / CI 覆盖 3.14
+
+### 为什么这一轮
+
+R11 之后我自查了「除了推送 GitHub，还剩什么问题」，挑出三条可复现性缺口：
+
+1. `docker-compose.yml` 是 `build: .`，**没传 `PIP_INDEX_URL`**；README 直接让人
+   `docker compose up -d`。实测直连 PyPI 只有 **39.7 kB/s**（pandas 12.4 MB 轮子下 290 s），
+   国内网络照 README 走会卡很久。这条知识只写在 `Dockerfile` 注释里，等于没写。
+2. `data/` 被 gitignore（全量 CSV 22.9 MB），**clone 后既没有原始 zip 也没有 CSV**，
+   新读者只能读代码和三张截图，`streamlit run` 打开是空看板。
+3. `.github/workflows/ci.yml` 测 3.12 / 3.13，而**开发本机是 3.14.8** —— 恰恰没被测。
+
+### 改了什么
+
+| 编号 | 改动 | 文件 |
+|---|---|---|
+| ④ | `app.build` 改成 `context: .` + `args.PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.org/simple}`，注释里给 PowerShell / bash 设置示例 | `docker-compose.yml` |
+| ④ | 快速开始「整个环境一条命令」补上先设镜像源的说明与实测网速对比 | `README.md` |
+| ⑤ | 新增 `scripts/make_sample.py`：按城市 × 年份分层抽 40 天/城市/年 | `scripts/make_sample.py` |
+| ⑤ | 生成 `data/sample/aqi_daily_sample.csv.gz`（**5,000 行 × 23 列 / 194 KB / 25 城 / 2021–2025**） | `data/sample/` |
+| ⑤ | `.gitignore` 给样本开白名单：`!data/sample/`、`!data/sample/*.csv.gz` | `.gitignore` |
+| ⑤ | 快速开始加「没有数据也别急」两条命令 + 样本偏倚警告（样本平均 AQI 125.7，全量 83.0） | `README.md` |
+| ⑥ | CI matrix 加 `"3.14"`，注释写明「本机版本必须覆盖」 | `.github/workflows/ci.yml` |
+
+### 命令与结果
+
+```
+$ python -u scripts/make_sample.py
+[done] 样本 5,000 行 × 23 列 → data/sample/aqi_daily_sample.csv.gz（194 KB）
+[info] 城市 25 座 / 年份 2021-2025 / 日期跨度 1825 天
+
+$ docker compose config | Select-String PIP_INDEX_URL
+        PIP_INDEX_URL: https://pypi.org/simple            # 未设环境变量时回落官方源
+$ $env:PIP_INDEX_URL="https://pypi.tuna.tsinghua.edu.cn/simple"; docker compose config
+        PIP_INDEX_URL: https://pypi.tuna.tsinghua.edu.cn/simple   # 设了就透传进去
+```
+
+### 样本到底能不能用（实测，不是推断）
+
+写了个临时脚本：把全量 CSV 挪开、样本放到 `data/processed/aqi_daily.csv.gz`、
+`MYSQL_PORT=1` 强制走 CSV 分支，跑 `AppTest`，结束后**无论成败都还原**：
+
+```
+异常数 = 0
+指标卡 = ['5,000', '25', '289', '125.7']
+下载按钮数 = 1（应为 1：只有「下载这 500 行」）
+第 2 次 rerun：异常数 = 0
+还原后 data/processed/aqi_daily.csv.gz = 22.9 MB
+```
+
+结论：**样本能让看板完整出图**，四张图和表格都正常。
+
+### 失败与修复
+
+- `make_sample.py` 第一版报 `KeyError: ['pm25_24h']`：磁盘上的 CSV 用**原始列名**
+  （`PM2.5_24h`），而选城市的逻辑按库里的蛇形名写。修法=用
+  `df.rename(columns=db.COLUMN_RENAMES)` 得到一份改名视图**只用于计算**，
+  输出仍取原始 `df` 的行，样本列名与正式产物保持一致。
+
+### 未验证
+
+- CI 是否真的在 GitHub 上跑绿 —— 提交仍未推送（2026-11-24 明确要求不上传），
+  `.github/workflows/ci.yml` 本次改动只是本地文件，**Actions 一次都没执行过**。
+- 「未设 `PIP_INDEX_URL` 时 `docker compose up -d`」这条路径没重跑（构建层已缓存，
+  看不出真实下载速度）；配置解析已用 `docker compose config` 验证通过。
+- 样本只覆盖 25 座城市，城市间相关 / 分区域分析的样本量与全量差异大 ——
+  这些结论**只能用全量数据看**。
+
+---
+
 ## 模板（下次运行照这个填）
 
 ```

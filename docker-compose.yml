@@ -36,7 +36,17 @@ services:
     restart: unless-stopped
 
   app:
-    build: .
+    build:
+      context: .
+      args:
+        # 装依赖用的 PyPI 源。默认官方源；国内网络务必覆盖，否则直连只有 ~40 kB/s
+        # （实测：pandas 一个轮子 12.4 MB 要下 290 s，装完全部依赖一小时以上）。
+        #
+        #   PowerShell:  $env:PIP_INDEX_URL="https://pypi.tuna.tsinghua.edu.cn/simple"
+        #   bash:        export PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
+        #
+        # 设好之后再 `docker compose up -d` / `build`，compose 会自动把它传进 Dockerfile。
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.org/simple}
     container_name: aqi-app
     depends_on:
       mysql:

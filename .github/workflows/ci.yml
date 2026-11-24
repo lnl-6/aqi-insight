@@ -14,7 +14,9 @@ jobs:
         # 3.11 不行：scipy 1.18.1 的 Requires-Python 是 >=3.12，
         # 在 3.11 上 pip 会报 "No matching distribution found"。
         # 这也是 Dockerfile 用 python:3.13-slim 的原因——两边必须一致。
-        python-version: ["3.12", "3.13"]
+        # 3.14 是开发本机版本（3.14.8），必须覆盖：否则「本机能跑、CI 不测」
+        # 这个组合最容易在别人的机器上炸。
+        python-version: ["3.12", "3.13", "3.14"]
 
     steps:
       - uses: actions/checkout@v4

@@ -22,6 +22,11 @@ data/interim/
 data/processed/
 *.csv.gz
 
+# 例外：样本数据要进仓库
+# （clone 之后没有原始 zip 也能 `streamlit run` 出图，见 scripts/make_sample.py）
+!data/sample/
+!data/sample/*.csv.gz
+
 # 报告里的临时产物
 *.png.tmp
 

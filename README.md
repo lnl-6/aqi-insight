@@ -49,6 +49,20 @@ streamlit run app/app.py     # 打开 http://localhost:8501
 前提是 `data/processed/aqi_daily.csv.gz` 存在。**没有 MySQL 也能跑**，
 看板会自动退回读本地文件（`app/app.py` 里的降级分支）。
 
+**没有数据也别急 —— 仓库自带一份 5,000 行的样本**（194 KB）：
+
+```bash
+cp data/sample/aqi_daily_sample.csv.gz data/processed/aqi_daily.csv.gz
+streamlit run app/app.py     # 两步就能出图，不需要下载任何原始数据
+```
+
+> ⚠️ 这份样本**刻意挑了 25 座城市**（2025 年 PM2.5 最差的一批 + 西安、北京、
+> 上海、广州、成都、哈尔滨），每人每年只留 40 天 —— 目的是让排名图、逐月图、
+> 相关热力图都有形状，**不是全国代表值**（样本平均 AQI 125.7，全量是 83.0）。
+> 看结论请用全量数据重跑，样本只用来验证「代码跑得起来」。
+
+样本由 `scripts/make_sample.py` 从全量表分层抽取，可随时重生成。
+
 ### 从零复现全流程 —— 5 步
 
 ```bash
@@ -92,9 +106,19 @@ export AQI_WORKSPACE=/data/aqi     # Linux/macOS
 ### 整个环境一条命令
 
 ```bash
-docker compose up -d          # MySQL + 应用一起起
+# 国内网络先设镜像源，否则装依赖会慢到离谱
+#   实测直连 PyPI：pandas 一个 12.4 MB 的轮子要下 290 s（≈40 kB/s）
+#   换清华源：864 kB/s，整层 300 s 装完
+export PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple   # Linux/macOS
+# setx / $env:PIP_INDEX_URL="https://pypi.tuna.tsinghua.edu.cn/simple"   # Windows
+
+docker compose up -d          # MySQL + 应用一起起（app 会构建镜像）
 docker compose logs -f app    # 排障第一步
 ```
+
+`docker-compose.yml` 里 `app.build.args.PIP_INDEX_URL` 读的正是这个环境变量
+（默认回落到官方源）。不设也能构建成功，只是国内网络可能要等很久 ——
+这一条是从 `Dockerfile` 注释里搬上来的，因为**照老版 README 走的人一定会踩**。
 
 ---
 
@@ -140,11 +164,13 @@ docker compose logs -f app    # 排障第一步
 ```
 aqi-insight/
 ├── src/            config / zipsource / cleaning / pipeline / aqi / stats / regions / db
-├── scripts/        prepare_data · make_report · load_mysql · run_queries
+├── scripts/        prepare_data · make_report · make_sample · load_mysql · run_queries
 ├── sql/            01_create · 02_index · queries（5 条窗口函数查询）
 ├── app/app.py      Streamlit + Pyecharts 看板
 ├── tests/          pytest 用例（含一个故意失败的练习用例）
 ├── docs/           结论 / 决策 / 踩坑 / 运行日志 / 限制
+├── images/         看板截图（README 里引用的三张）
+├── data/sample/    5,000 行样本，clone 后不下载原始数据也能出图
 ├── Dockerfile · docker-compose.yml
 └── reports/        report.md · data_quality.md · queries/*.csv
 ```
