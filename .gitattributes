@@ -17,6 +17,10 @@
 *.toml     text eol=lf
 *.sh       text eol=lf
 Dockerfile text eol=lf
+# 无扩展名但同样要 LF 的文件（容器里会被 /bin/sh 读到的那些）
+LICENSE        text eol=lf
+.dockerignore  text eol=lf
+.gitignore     text eol=lf
 
 # Windows 批处理必须是 CRLF，否则 cmd 解析异常
 *.bat      text eol=crlf
