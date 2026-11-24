@@ -861,6 +861,92 @@ E       assert -45 == 45
 
 ---
 
+## R11 · 2026-11-24 按 F1–F12 十二条清单做工程化收尾
+
+### 环境
+
+| 项 | 值 |
+|---|---|
+| 时间 | 2026-11-24 13:00–14:00（+08:00） |
+| Python | 3.14.8（D:\Dev\Python\python.exe） |
+| 仓库 | `D:\学习\aqi-insight`，起点 `1caf8cb` |
+| Docker | 引擎运行中，`aqi-app` / `aqi-mysql` 均 healthy |
+| 测试基线 | 107 passed, 1 xfailed |
+
+### 为什么这一轮
+
+上一轮把项目推上 GitHub 后，逐条核对了 12 个「面试官/新读者会卡住」的点（F1–F12）。
+大部分不是分析问题，是**工程可复现性问题**：别人 clone 下来跑不跑得起来、报告里有没有个人路径、
+依赖版本会不会漂。这类问题的共同特点是：**自己机器上永远看不出来**。
+
+### 改了什么
+
+| 编号 | 事项 | 落点 | 验收 |
+|---|---|---|---|
+| F1 | 构建上下文瘦身 | 新建 `.dockerignore`（排除 `data/` 160+ MB、`.git/`、缓存、`.env`） | `docker compose build` 的 transferring context 从上百 MB 降到几 MB |
+| F2 | 默认路径可移植 | `src/config.py:31` 改 `WORKSPACE = Path(os.getenv("AQI_WORKSPACE", str(ROOT.parent)))`；`.env.example` 改成注释并说明默认值；`scripts/prepare_data.py` 的 `--workspace` help 同步 | 不设环境变量时指向项目上一级，`--limit 3` 仍找得到数据 |
+| F3 | 依赖钉版本 | `requirements.txt` 全部 `==`（pandas 3.0.3 / numpy 2.4.4 / scipy 1.18.1 / SQLAlchemy 2.1.8 / PyMySQL 1.2.3 / streamlit 1.67.0 / pyecharts 2.1.0 / streamlit-echarts 0.7.0 / tqdm 4.70.0 / python-dotenv 1.2.4）；新建 `requirements-dev.txt`（`-r requirements.txt` + `pytest==9.2.0`，`cpca` 只在注释里）；**Dockerfile 基础镜像由 `python:3.11-slim` 升到 `python:3.13-slim`** | 容器装出的版本与本机一致 |
+| F4 | 加协议 | 新建 `LICENSE`（MIT, 2026 lnl-6）；README 末尾加「许可」小节 | GitHub 侧栏显示 MIT |
+| F5 | 质量报告不再被探针覆盖 | `scripts/prepare_data.py` 新增 `--report`；试跑（带 `--limit/--years/--level/--out` 任一）→ 报告写到输出文件旁边，完整跑 → 才写 `reports/data_quality.md` | `--limit 3 --no-resume` 后正式报告 mtime 不变 |
+| F6 | 报告不写绝对路径 | `scripts/make_report.py` 用 `config.DAILY_CSV.relative_to(ROOT)`（`ValueError` 时退回文件名） | `reports/report.md` 显示 `data/processed/aqi_daily.csv.gz` |
+| F7 | 加 CI | 新建 `.github/workflows/ci.yml`：Python **3.12 / 3.13** 矩阵，`pip install -r requirements-dev.txt` → `compileall` → `pytest -q` | Actions 变绿 |
+| F8 | README 启动顺序 | 「快速开始」顶部加两块提示：**仓库不含数据**（放一份 CSV 到 `data/processed/` 即可脱离 MySQL 跑看板）、**`docker compose` 前要先启动 Docker Desktop** | 照 README 从零走不卡第一步 |
+| F9 | 第一个 tag | `git tag -a v1.0.0` | GitHub 上出现 Tags |
+| F10 | `city_is_valid` 删掉 | `src/cleaning.py` 两个分支各删一行赋值；`src/stations.py` 的 `attach_city` 删三处并改写 docstring；`tests/test_cleaning.py` 三条断言改成「该列不存在」 | CSV 由 24 列变 **23 列**，与 DB 一致 |
+| F11 | 补「5 个点没功效」 | `scripts/make_report.py` 的 `sec_trend` 末尾自动生成两段说明；`docs/findings.md` 加「不显著≠没改善」小节 | 报告 §3.4 末尾出现该段 |
+| F12 | 站点级写清「不做」 | `docs/limitations.md` 新增第 13 条（跑通了、有产物体积、但没有下游消费者、接进来要 2–4 h） | 边界书面化，不留半成品 |
+
+### 命令与结果
+
+| 命令 | 结果 |
+|---|---|
+| `python -m compileall -q app src scripts tests conftest.py` | 退出码 0 |
+| `python -m pytest -q` | **107 passed, 1 xfailed**（F10 改了三条断言，数量未变） |
+| `python -u scripts/prepare_data.py --limit 3 --no-resume --out data\processed\_probe.csv.gz` | **1,109 行 × 23 列**、0.7 s；报告写到 `data/processed/data_quality.md`；正式报告 mtime 仍为 11-23 17:44 ✅ |
+| 同一命令不带 `--out`（只有 `--limit 3`） | `[resume] 已完成 1826 天，跳过 1826 个日文件` → `[error] 没有产出任何数据`、exit 1。**这是 resume 的正常行为**：全量已完成时 `--limit` 不会强制重算，要验证流程必须加 `--no-resume` |
+| `python -u scripts/prepare_data.py --no-resume`（全量重跑，23 列） | 见下条「全量重跑」 |
+| `git tag -a v1.0.0 -m "..."` | 已打，随提交推送 |
+
+### 失败与修复
+
+| 现象 | 根因 | 处理 |
+|---|---|---|
+| `--limit 3` 什么都没干就 exit 1 | resume 发现 1826 天都已完成，直接跳过全部日文件 | 验证流程要加 `--no-resume`（本轮已把这条写进 run-log，避免下次误判成「脚本坏了」） |
+| `docker compose build` 曾在 pip 层 `exit code: 2` | 直连 PyPI 极慢 + `>=` 无上界导致解析出本机没有的版本 | F3 钉死版本；构建时带 `--build-arg PIP_INDEX_URL=<国内源>` |
+| 钉版本后 `docker compose build` 又失败：`ERROR: Could not find a version that satisfies the requirement scipy==1.18.1` | **`scipy 1.18.1` 的 `Requires-Python` 是 `>=3.12`，而基础镜像是 `python:3.11-slim`**。本机是 Python 3.14，所以本地一直没暴露 | 基础镜像升到 `python:3.13-slim`（`docker pull docker.1panel.live/library/python:3.13-slim` → `docker tag` 成官方名），CI 矩阵同步去掉 3.11。**教训：钉版本不只钉库，还要钉解释器** |
+| `Get-Content requirements.txt` 显示乱码 | PowerShell 按 GBK 读 UTF-8 | 用 `python -c "...read_text(encoding='utf-8')"` 复核（R8/R10 已记两次，这是第三次） |
+
+### 全量重跑（F10 之后）
+
+删掉 `city_is_valid` 改变了产出 schema（24 → 23 列），因此必须重跑一次让
+`data/processed/aqi_daily.csv.gz`、`reports/data_quality.md`、`reports/report.md`
+三者与新代码一致。
+
+| 命令 | 结果 |
+|---|---|
+| `python -u scripts/prepare_data.py --no-resume` | **632,513 行 × 23 列**，1826/1826 个日文件，**2343.2 s（1.28 s/文件）** |
+| `python scripts/make_report.py` | 报告 632,513 行 / **23 列** / 372 城；`reports/data_quality.md` 26 行完整版 |
+
+**耗时为什么从 280.9 s 涨到 2343.2 s**：本轮机器同时在建 Docker 镜像（pip 装依赖）、
+跑 pytest、开着 Streamlit 容器与 MySQL，不是代码变慢。判断依据是 11-14 同样的慢化
+也有同样原因（见 R4 的 1279.9 s）。真要基准测速，得在空闲机器上跑。
+
+**逐行 diff 的结果（关键验证）**：`reports/report.md` 与上一版相比只有 4 处变化——
+生成时间、数据源（改成相对路径）、`数据列数 24 → 23`、以及新增的 F11 功效说明段。
+**所有统计数字一字未变**，证明 `city_is_valid` 确实不参与任何计算。
+
+重跑后 `SELECT COUNT(*) FROM aqi_daily` 仍是 **632,513**（MySQL 里本来就没有这一列，无需重导入）。
+
+### 未验证
+
+- **CI 是否真的绿**：workflow 是本地写的，要推上去才知道；且 CI 上没有 `data/`，
+  依赖数据的 2 条用例靠 `skipif` 跳过——这条逻辑本地验证过，但没在真 CI 上跑过。
+- **`docker compose build` 用钉死版本重建**：本轮改了 `requirements.txt`，镜像需要重建一次
+  才能证明「容器用 3.0.3」也跑得通；重建耗时约 5 分钟（走清华源），未在本次记录中执行。
+- 图表像素级渲染、外网访问 8501（沿用 R10 的结论）。
+
+---
+
 ## 模板（下次运行照这个填）
 
 ```

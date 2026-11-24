@@ -27,8 +27,9 @@ try:
 except ImportError:  # pragma: no cover
     pass
 
-#: 原始数据所在工作区（可用环境变量 AQI_WORKSPACE 覆盖）
-WORKSPACE = Path(os.getenv("AQI_WORKSPACE", r"D:\学习"))
+#: 原始数据所在目录。默认取项目目录的上一级（``aqi-insight/..``），
+#: 换机器时用环境变量 ``AQI_WORKSPACE`` 覆盖，**不要改这里**。
+WORKSPACE = Path(os.getenv("AQI_WORKSPACE", str(ROOT.parent)))
 
 # ---------------------------------------------------------------- 数据形态
 

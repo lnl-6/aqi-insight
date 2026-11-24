@@ -111,13 +111,16 @@ def attach_city(df: pd.DataFrame, mapping: pd.DataFrame) -> pd.DataFrame:
     """给日表加上 city 列。
 
     - 有映射：走 left join，找不到的标「未知」
-    - 无映射：city 直接等于站点编号，并打 `city_is_valid=False` 标记
+    - 无映射：city 直接等于站点编号（站点级模式没有对照表时的降级）
+
+    不再输出 ``city_is_valid`` 标记列：这个标记在城市级数据里恒为 True，
+    却因为不在 ``LOAD_COLUMNS`` 里造成「CSV 24 列 / DB 23 列」的长期解释负担。
+    「映射没成功」这件事看 ``city`` 本身就知道——它会是站点编号或「未知」。
     """
     out = df.copy()
     if mapping is None or mapping.empty:
         out["city"] = out["station"]
         out["station_name"] = pd.NA
-        out["city_is_valid"] = False
         return out
 
     # 只 merge 映射里真实存在的列：外部传入的映射常常只有 station/city，
@@ -130,7 +133,6 @@ def attach_city(df: pd.DataFrame, mapping: pd.DataFrame) -> pd.DataFrame:
         )
         out["city"] = out["station"]
         out["station_name"] = pd.NA
-        out["city_is_valid"] = False
         return out
 
     cols = [c for c in ("station", "city", "station_name") if c in mapping.columns]
@@ -145,7 +147,6 @@ def attach_city(df: pd.DataFrame, mapping: pd.DataFrame) -> pd.DataFrame:
             stacklevel=2,
         )
     out["city"] = out["city"].fillna("未知")
-    out["city_is_valid"] = out["city"].ne("未知")
     return out
 
 

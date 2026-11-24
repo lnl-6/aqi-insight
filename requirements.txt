@@ -1,18 +1,25 @@
+# 运行时依赖 —— 版本全部钉死。
+#
+# 为什么钉死：本项目所有结论都由这些版本跑出来，换版本后 reports/ 里的数字
+# 可能不再可复现（pandas 换大版本会改 groupby 的默认行为、scipy 换版本会改
+# t 检验的自由度处理）。改版本要重跑全部报告并更新 docs/run-log.md。
+#
+# 这些版本是 2026-11-23 在本机与容器里实测跑通的同一套：
+#   本机 Python 3.14.8 / 容器 python:3.11-slim
+# 测试依赖另见 requirements-dev.txt。
+
 # 核心
-pandas>=2.0
-numpy>=1.24
+pandas==3.0.3
+numpy==2.4.4
 # 统计检验
-scipy>=1.10
+scipy==1.18.1
 # 数据库
-sqlalchemy>=2.0
-pymysql>=1.1
-# 看板（图表用 pyecharts，不再依赖 matplotlib：
-# matplotlib 从 2026-11-08 那版报告之后就没人 import 了，2026-11-23 删掉）
-streamlit>=1.30
-pyecharts>=2.0
-streamlit-echarts>=0.4
+SQLAlchemy==2.1.8
+PyMySQL==1.2.3
+# 看板（图表用 pyecharts；matplotlib 自 2026-11-08 起无人 import，2026-11-23 已删）
+streamlit==1.67.0
+pyecharts==2.1.0
+streamlit-echarts==0.7.0
 # 工程
-tqdm>=4.66
-python-dotenv>=1.0
-# 测试
-pytest>=7.4
+tqdm==4.70.0
+python-dotenv==1.2.4

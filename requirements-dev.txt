@@ -1,0 +1,15 @@
+# 开发 / 测试依赖 —— 不作为运行时安装，Dockerfile 只装 requirements.txt
+#
+# 用法：
+#     pip install -r requirements-dev.txt
+
+-r requirements.txt
+
+pytest==9.2.0
+
+# 一次性工具：只用来生成 src/regions.py（城市 → 省份 → 大区），
+# 生成之后运行时只读那份静态字典，**不需要** cpca。
+# 装它要先有 setuptools（Python 3.14 默认不带 pkg_resources）：
+#     pip install "setuptools<82" cpca
+# 生成方式见 docs/decisions.md 的 D-002「第三层」。
+# cpca==0.8.3

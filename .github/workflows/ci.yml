@@ -1,0 +1,46 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.11 不行：scipy 1.18.1 的 Requires-Python 是 >=3.12，
+        # 在 3.11 上 pip 会报 "No matching distribution found"。
+        # 这也是 Dockerfile 用 python:3.13-slim 的原因——两边必须一致。
+        python-version: ["3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: requirements*.txt
+
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+
+      - name: 语法检查
+        run: python -m compileall -q app src scripts tests conftest.py
+
+      - name: 单元测试
+        run: python -m pytest -q
+
+# 说明：
+# 1. 仓库不含数据（data/ 在 .gitignore 里），所以依赖数据文件的用例靠
+#    @pytest.mark.skipif(not DATA.exists()) 自动跳过（见 tests/test_regions.py）。
+#    CI 上只会跑不依赖数据的那部分——这也正是本项目测试设计的原则：
+#    核心逻辑必须能在没有数据、没有 MySQL 的机器上验证。
+# 2. 这里不跑 docker compose：构建镜像要拉基础镜像和装依赖，几分钟起步，
+#    而且 CI 里的网络与本地差异大（本地直连 PyPI 只有 40 kB/s，需走镜像源）。
+#    镜像构建的验证记录在 docs/run-log.md 的 R7 / R11。

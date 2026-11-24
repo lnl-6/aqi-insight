@@ -198,14 +198,12 @@ def finalize(
     if lvl == "city":
         # 城市级：melt 出来的「列名」就是城市，直接就是 city，不需要映射
         out["city"] = out["station"].astype(str)
-        out["city_is_valid"] = True
     elif station_map is not None and not station_map.empty:
         from .stations import attach_city
 
         out = attach_city(out, station_map)
     else:
         out["city"] = out["station"].astype(str)
-        out["city_is_valid"] = False
 
     # 一行里一个污染物都没有 → 没有分析价值
     value_cols = [c for c in POLLUTANT_TYPES if c in out.columns]

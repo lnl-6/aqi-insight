@@ -1,5 +1,9 @@
 # 一阶段：装依赖（分开一层，改代码时不用重装依赖）
-FROM python:3.11-slim
+#
+# 为什么是 3.13 而不是 3.11：scipy 1.18.1（本机实测版本）的 Requires-Python 是 >=3.12，
+# 在 3.11 上 pip 直接报 "No matching distribution found for scipy==1.18.1"。
+# 既然 requirements.txt 已经钉死版本，基础镜像也得跟着钉到装得下这些版本的解释器。
+FROM python:3.13-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \

@@ -153,7 +153,8 @@ def test_finalize_without_station_map_keeps_station_as_city() -> None:
     })
     out = finalize(daily, pd.DataFrame(), level="site")
     assert out.loc[0, "city"] == "1001A"
-    assert not bool(out.loc[0, "city_is_valid"])
+    # 映射失败不再靠标记列表达，而是 city 本身就是站点编号
+    assert "city_is_valid" not in out.columns
 
 
 def test_finalize_uses_city_map() -> None:
@@ -165,7 +166,6 @@ def test_finalize_uses_city_map() -> None:
     mapping = pd.DataFrame({"station": ["1001A"], "city": ["西安市"]})
     out = finalize(daily, mapping, level="site")
     assert out.loc[0, "city"] == "西安市"
-    assert bool(out.loc[0, "city_is_valid"])
 
 
 def test_finalize_city_level_needs_no_map() -> None:
@@ -178,7 +178,6 @@ def test_finalize_city_level_needs_no_map() -> None:
     # 故意传一个空映射，模拟「工作区里没有站点列表」的情况
     out = finalize(daily, pd.DataFrame(), level="city")
     assert out.loc[0, "city"] == "西安市"
-    assert bool(out.loc[0, "city_is_valid"])
 
 
 def test_finalize_city_level_ignores_station_map() -> None:

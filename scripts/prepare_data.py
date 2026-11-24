@@ -42,7 +42,11 @@ def main() -> int:
                         help="数据层级：city=城市级（默认），site=站点级")
     parser.add_argument("--out", type=Path, default=None, help="输出路径，默认 data/processed/aqi_daily.csv.gz")
     parser.add_argument("--no-resume", action="store_true", help="忽略已有产出，全部重跑")
-    parser.add_argument("--workspace", type=Path, default=None, help="原始数据目录，默认 D:\\学习")
+    parser.add_argument("--report", type=Path, default=None,
+                        help="质量报告输出路径。默认：完整跑写 reports/data_quality.md，"
+                             "带 --limit/--years/--level/--out 的试跑写在输出文件旁边（不覆盖正式报告）")
+    parser.add_argument("--workspace", type=Path, default=None,
+                        help="原始数据目录，默认项目的上一级目录")
     args = parser.parse_args()
 
     years = args.years or list(config.DEFAULT_YEARS)
@@ -63,7 +67,21 @@ def main() -> int:
         print("[error] 没有产出任何数据，请检查上面的报错。")
         return 1
 
-    report = save_quality_report(df)
+    # 质量报告默认跟着「这次跑的规模」走：
+    #   完整跑（没传 --limit/--years/--level/--out）→ reports/data_quality.md
+    #   任何试跑 → 写在输出文件旁边，绝不覆盖正式报告
+    # 这一条是被坑出来的：2026-11-14 用 --limit 1 验证目录自动创建，
+    # 把 reports/data_quality.md 覆盖成了 1 个日文件版；11-23 站点级全量
+    # 又把同一路径覆盖成站点版。探针不该有副作用。
+    out_path = args.out or config.DAILY_CSV
+    narrowed = any(x is not None for x in (args.limit, args.years, args.level, args.out))
+    report_path = args.report or (
+        out_path.parent / "data_quality.md" if narrowed
+        else config.REPORTS_DIR / "data_quality.md"
+    )
+    report = save_quality_report(df, report_path)
+    if narrowed and args.report is None:
+        print(f"[info] 这是试跑，质量报告写在输出旁边（正式报告未改动）：{report_path}")
     print(f"[done] 数据质量报告 → {report}")
     print("[next] 下一步：python scripts/load_mysql.py")
     return 0

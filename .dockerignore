@@ -1,0 +1,25 @@
+# 构建上下文里不要带进来的东西
+#
+# 为什么要有这个文件：Dockerfile 只 COPY 了 src/ app/ sql/ scripts/ tests/
+# conftest.py .streamlit/，所以**镜像本身不脏**；但没有 .dockerignore 时，
+# `docker compose build` 仍会把整个目录（含 data/ 的 160+ MB）打包成构建上下文
+# 传给 daemon —— 每次都白传一遍，还容易让人以为数据进了镜像。
+
+# 数据一律不进构建上下文（运行时靠 volume 挂载）
+data/
+reports/queries/
+images/
+
+# 版本库与缓存
+.git/
+.gitignore
+.gitattributes
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.streamlit/cache/
+
+# 本地产物与密钥
+*.log
+.env
+.env.local

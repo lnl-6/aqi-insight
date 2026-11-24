@@ -1,8 +1,10 @@
 # 全国城市空气质量数据分析平台
 
 把 2021–2025 年全国城市级的原始宽表（**城市在列上**、每天 15 类指标、共 378 列）
-清洗成 **632,513 行 × 24 列**的日级事实表，存进 MySQL，再用 Streamlit + Pyecharts
+清洗成 **632,513 行 × 23 列**的日级事实表，存进 MySQL，再用 Streamlit + Pyecharts
 做成可按 **城市 / 年份 / 污染物 / AQI 等级** 四维筛选的在线看板。
+（CSV 与数据库都是 23 列 —— 2026-11-24 删掉了恒为 True 的 `city_is_valid` 标记列，
+详见 `docs/run-log.md` R11。）
 
 
 ---
@@ -24,6 +26,14 @@
 ---
 
 ## 快速开始
+
+> **关于数据**：仓库里**不含数据**（`data/` 已被 `.gitignore` 排除，合计 160+ MB）。
+> 只想看看板却没下原始 zip？把任意一份 `aqi_daily.csv.gz` 放进 `data/processed/`，
+> 看板会自动退回读它，**不需要 MySQL、不需要原始 zip**。
+>
+> **关于 Docker**：所有 `docker compose` 步骤都要**先启动 Docker Desktop**，
+> 等托盘图标变绿再执行，否则会看到 `failed to connect to the docker API ...`。
+> 只跑第 1、2 步和看板的话，完全不需要 Docker。
 
 ### 只想看结论 —— 0 条命令
 
@@ -64,7 +74,19 @@ streamlit run app/app.py
 ```
 
 第 1 步需要自备原始数据：从 <https://quotsoft.net/air/> 下载
-`城市_YYYY0101-YYYY1231.zip` 放到 `AQI_WORKSPACE`（默认 `D:\学习\全国空气质量`）。
+`城市_YYYY0101-YYYY1231.zip` 放到**项目上一级目录**的 `全国空气质量/`，
+即 `aqi-insight/..\全国空气质量\`（默认值就等于这个位置）。
+放别处时用环境变量覆盖，例如：
+
+```bash
+set AQI_WORKSPACE=D:\学习          # Windows
+export AQI_WORKSPACE=/data/aqi     # Linux/macOS
+```
+
+> 为什么默认是「项目上一级」而不是写死某个盘符：换机器、换系统时绝对路径必然找不到，
+> 而报错只会说「没找到文件」，不会说「路径没配」。默认相对化后，把项目和原始数据
+> 摆成邻居就能直接跑；`--limit 3` 跑通后再上全量。
+
 文件形态与下载方式见 [docs/data_source.md](docs/data_source.md)。
 
 ### 整个环境一条命令
@@ -140,3 +162,12 @@ aqi-insight/
 | [docs/data_source.md](docs/data_source.md) | 数据来源、文件形态、粒度取舍 |
 | [docs/run-log.md](docs/run-log.md) | 每次真实运行记录（命令 / 耗时 / 失败与修复） |
 | [reports/report.md](reports/report.md) | 脚本生成的完整分析报告 |
+
+---
+
+## 许可
+
+MIT © 2026 lnl-6 —— 见 [LICENSE](LICENSE)。
+
+数据本身的版权与许可与代码无关：数据由中国环境监测总站发布、quotsoft.net 整理，
+引用方式见 [docs/data_source.md](docs/data_source.md)。

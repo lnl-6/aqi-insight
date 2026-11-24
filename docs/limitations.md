@@ -41,3 +41,11 @@
     入站要靠上游网关做端口映射。从瑞士 / 印度 / 土耳其三个节点做 TCP 连接全部超时。
     **这不是代码缺陷**：要对外演示得走隧道（Cloudflare Tunnel / ngrok）或部署到云服务器。
     本地访问 `http://localhost:8501` 一直正常
+13. **站点级数据在分析范围内，但「不做」** —— `prepare_data.py --level site` 已跑通全量
+    （**3,063,013 行 × 25 列 / 1,843 个监测点 / 1,061.9 s**），产物 `data/processed/aqi_daily_site.csv.gz`
+    127 MB，质量报告 `reports/data_quality_site.md`。
+    **但本项目所有结论都基于城市级数据**，站点级只用来证明「同一套管线支持两种粒度」。
+    它没有下游消费者：`load_mysql.py` 没有 `--level`，`aqi_daily` 表里也没有 `station_name` 列。
+    要做「同城不同监测点的空间差异」，需要另建 `aqi_daily_site` 表并扩展 `load_mysql.py`、
+    报告与看板，2–4 小时起，而目前没有任何人会读第二套结论。
+    **写清边界比留一个半成品更专业**——这条就是那个边界的书面记录。

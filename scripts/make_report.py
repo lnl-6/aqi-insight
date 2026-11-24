@@ -272,6 +272,18 @@ def sec_trend(df: pd.DataFrame) -> list[str]:
     lines.append("")
     lines.append("> 第 8.1 节的配对 t 检验只比较首末年，作为**辅助证据**，不是主结论。")
     lines.append("")
+    # 「不显著」最容易被误读成「没改善」，必须把功效问题写清楚
+    lines.append(
+        f"> **为什么说「不显著」不能读成「没改善」**：本节检验的序列只有 **n = {len(series)}** 个点"
+        "（五个年均值）。线性回归与 Mann-Kendall 在这么短的序列上**功效很低**——"
+        "即使真实趋势是每年 −0.5 μg/m³，也很难在 α=0.05 下显著。"
+        "所以「不显著」只能读成「这五年**没测出**单调趋势」，不能读成「没有改善」。")
+    lines.append(">")
+    lines.append(
+        "> 要判断改善与否，正确的粒度是**城市级面板**（约 339 城 × 5 年 ≈ 1,695 个观测），"
+        "而不是 5 个全国均值。本报告第 8.1 节的配对 t 检验就是这个思路的一半——"
+        "它用城市配对消除了城市间差异，但仍然只看首末两年。")
+    lines.append("")
     return lines
 
 
@@ -1069,11 +1081,20 @@ def main() -> int:
     out = Path(args.out) if args.out else config.REPORTS_DIR / "report.md"
     out.parent.mkdir(parents=True, exist_ok=True)
 
+    # 报告是要提交进仓库的产物，不能带个人绝对路径（D:\学习\...）。
+    # 能相对 ROOT 就相对，不能就只留文件名。
+    # 并且统一用正斜杠：报告是要提交进仓库的产物，Windows 反斜杠在 GitHub 上
+    # 既不像路径也不好复制到 Linux 上。
+    try:
+        shown_source = config.DAILY_CSV.relative_to(ROOT).as_posix()
+    except ValueError:
+        shown_source = config.DAILY_CSV.name
+
     lines = [
         "# 空气质量数据分析报告（自动生成）",
         "",
         f"- 生成时间：{datetime.now():%Y-%m-%d %H:%M:%S}",
-        f"- 数据源：`{config.DAILY_CSV}`" if not args.from_db
+        f"- 数据源：`{shown_source}`" if not args.from_db
         else f"- 数据源：MySQL `{config.DB['database']}.{config.TABLE_DAILY}`"
              f"（{config.DB['host']}:{config.DB['port']}）",
         f"- 生成命令：`python scripts/make_report.py{'' if not args.from_db else ' --from-db'}`",
