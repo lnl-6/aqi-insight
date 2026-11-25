@@ -1009,12 +1009,38 @@ $ $env:PIP_INDEX_URL="https://pypi.tuna.tsinghua.edu.cn/simple"; docker compose 
 
 ### 未验证
 
-- CI 是否真的在 GitHub 上跑绿 —— 提交仍未推送（2026-11-24 明确要求不上传），
-  `.github/workflows/ci.yml` 本次改动只是本地文件，**Actions 一次都没执行过**。
 - 「未设 `PIP_INDEX_URL` 时 `docker compose up -d`」这条路径没重跑（构建层已缓存，
   看不出真实下载速度）；配置解析已用 `docker compose config` 验证通过。
 - 样本只覆盖 25 座城市，城市间相关 / 分区域分析的样本量与全量差异大 ——
   这些结论**只能用全量数据看**。
+
+### 2026-11-25 补记：CI 第一次真的跑绿了（R12 原「未验证」第一条已消除）
+
+R12 当时写的是「CI 一次都没执行过」，因为提交没推上去。2026-11-25 10:57 推送后
+Actions 立刻触发，三个矩阵作业全部 success：
+
+| 作业 | 结论 | 耗时 | 步骤 |
+|---|---|---|---|
+| `test (3.12)` | success | 41 s | checkout → setup-python → 安装依赖 → 语法检查 → 单元测试 |
+| `test (3.13)` | success | 36 s | 同上 |
+| `test (3.14)` | success | 46 s | 同上（本机开发版本，之前恰恰没被测） |
+
+运行编号 `#1`、run id `45536599412`、workflow `ci`、head `f25748b`。
+`安装依赖` 这一步在 GitHub 的 runner 上 **41 秒装完**（本机直连 PyPI 是 39.7 kB/s，
+同一份 requirements 要下几十分钟）—— 说明「慢」是本机网络问题，不是依赖有问题。
+
+**顺带记一条运维事实（下次推送卡住先看这里）**：2026-11-25 本机网络里
+`github.com:443` 被切断（`schannel: server closed abruptly`，DNS 解析到 `20.6.7.17`
+这类非 GitHub 地址），但 `api.github.com:443`、`github.com:22`、`ssh.github.com:443`
+都通。⇒ 已把 `origin` 从 HTTPS 换成 SSH：
+
+```
+git remote set-url origin git@github.com:lnl-6/aqi-insight.git
+git config core.sshCommand "ssh -i C:/Users/w/.ssh/id_ed25519 -o IdentitiesOnly=yes"
+```
+
+以后推送走 SSH；`git push` 报 `Connection was reset` 时先 `ssh -T git@github.com`
+确认凭据，别去怀疑仓库。
 
 ---
 

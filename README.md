@@ -1,5 +1,8 @@
 # 全国城市空气质量数据分析平台
 
+[![ci](https://github.com/lnl-6/aqi-insight/actions/workflows/ci.yml/badge.svg)](https://github.com/lnl-6/aqi-insight/actions/workflows/ci.yml)
+[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 把 2021–2025 年全国城市级的原始宽表（**城市在列上**、每天 15 类指标、共 378 列）
 清洗成 **632,513 行 × 23 列**的日级事实表，存进 MySQL，再用 Streamlit + Pyecharts
 做成可按 **城市 / 年份 / 污染物 / AQI 等级** 四维筛选的在线看板。
